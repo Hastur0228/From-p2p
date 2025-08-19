@@ -1,7 +1,7 @@
 import torch
 
 
-def _min_dists_chunked(A: torch.Tensor, B: torch.Tensor, chunk: int = 1024) -> torch.Tensor:
+def _min_dists_chunked(A: torch.Tensor, B: torch.Tensor, chunk: int = 1024, squared: bool = True) -> torch.Tensor:
     """
     计算 A 中每个点到 B 的最近距离（欧氏），返回 (BATCH, N)；按 N 维分块以减小内存。
     A: (BATCH, N, 3), B: (BATCH, M, 3)
@@ -14,12 +14,20 @@ def _min_dists_chunked(A: torch.Tensor, B: torch.Tensor, chunk: int = 1024) -> t
         a = A[:, start:end, :]  # (BATCH, C, 3)
         # cdist: (BATCH, C, M)
         d = torch.cdist(a, B, p=2)
+        if squared:
+            d = d.pow(2)
         m, _ = d.min(dim=2)  # (BATCH, C)
         mins.append(m)
     return torch.cat(mins, dim=1)
 
 
-def chamfer_distance(pcd1: torch.Tensor, pcd2: torch.Tensor, reduction: str = 'mean', chunk: int = 1024) -> torch.Tensor:
+def chamfer_distance(
+    pcd1: torch.Tensor,
+    pcd2: torch.Tensor,
+    reduction: str = 'mean',
+    chunk: int = 1024,
+    squared: bool = True,
+) -> torch.Tensor:
     """
     计算 Chamfer Distance (CD) between two point clouds，带分块避免内存占用过大。
     pcd1, pcd2: (B, N, 3) 与 (B, M, 3)
@@ -30,9 +38,9 @@ def chamfer_distance(pcd1: torch.Tensor, pcd2: torch.Tensor, reduction: str = 'm
         raise ValueError("pcd1/pcd2 应为 3D 张量，形如 (B,N,3)/(B,M,3)")
 
     # min over pcd2 for each point in pcd1
-    min1 = _min_dists_chunked(pcd1, pcd2, chunk=chunk)  # (B, N)
+    min1 = _min_dists_chunked(pcd1, pcd2, chunk=chunk, squared=squared)  # (B, N)
     # min over pcd1 for each point in pcd2
-    min2 = _min_dists_chunked(pcd2, pcd1, chunk=chunk)  # (B, M)
+    min2 = _min_dists_chunked(pcd2, pcd1, chunk=chunk, squared=squared)  # (B, M)
 
     if reduction == 'mean':
         loss = min1.mean() + min2.mean()
@@ -50,6 +58,7 @@ def local_chamfer_distance(
     radius: float = 0.2,
     reduction: str = 'mean',
     chunk: int = 1024,
+    squared: bool = True,
 ) -> torch.Tensor:
     """
     局部 Chamfer Distance：围绕 pcd1 的局部 patch（球邻域）计算 CD，然后在所有 patch 上取均值。
@@ -99,19 +108,19 @@ def local_chamfer_distance(
                 x_patch = x[mask_x].unsqueeze(0)
                 y_patch = y[mask_y].unsqueeze(0)
                 # 局部 CD（双向）
-                loss_patch = chamfer_distance(x_patch, y_patch, reduction='mean', chunk=chunk)
+                loss_patch = chamfer_distance(x_patch, y_patch, reduction='mean', chunk=chunk, squared=squared)
                 total = total + loss_patch
                 count += 1
             elif mask_x.any() and (not mask_y.any()):
                 # y 在该邻域为空：对 x_patch 到 y 全局做单向最近距离
                 x_patch = x[mask_x].unsqueeze(0)
-                min1 = _min_dists_chunked(x_patch, y.unsqueeze(0), chunk=chunk).mean()
+                min1 = _min_dists_chunked(x_patch, y.unsqueeze(0), chunk=chunk, squared=squared).mean()
                 total = total + min1
                 count += 1
             elif mask_y.any() and (not mask_x.any()):
                 # x 在该邻域为空：对 y_patch 到 x 全局做单向最近距离
                 y_patch = y[mask_y].unsqueeze(0)
-                min2 = _min_dists_chunked(y_patch, x.unsqueeze(0), chunk=chunk).mean()
+                min2 = _min_dists_chunked(y_patch, x.unsqueeze(0), chunk=chunk, squared=squared).mean()
                 total = total + min2
                 count += 1
             else:

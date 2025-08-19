@@ -45,13 +45,14 @@ def get_graph_feature(x: torch.Tensor, k: int) -> torch.Tensor:
 class EdgeConvBlock(nn.Module):
     """DGCNN 中的基本 EdgeConv 模块: [x_j - x_i, x_i] -> Conv2d -> BN -> LeakyReLU -> max_k"""
 
-    def __init__(self, in_channels: int, out_channels: int, k: int = 20):
+    def __init__(self, in_channels: int, out_channels: int, k: int = 20, dropout_p: float = 0.1):
         super().__init__()
         self.k = k
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels * 2, out_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Dropout2d(p=dropout_p),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -69,22 +70,41 @@ class DGCNNEncoder(nn.Module):
     - 默认为 4 个 EdgeConv 层，拼接后再经 MLP 聚合为全局特征。
     """
 
-    def __init__(self, input_dims: int = 3, k: int = 20, feat_dim: int = 512):
+    def __init__(self, input_dims: int = 3, k: int = 20, feat_dim: int = 512, dropout_p: float = 0.1, multi_scale_ks: tuple[int, ...] = (10, 20, 30)):
         super().__init__()
         self.k = k
+        self.multi_scale_ks = tuple(multi_scale_ks) if (multi_scale_ks is not None and len(multi_scale_ks) > 0) else tuple()
 
-        self.ec1 = EdgeConvBlock(input_dims, 64, k)
-        self.ec2 = EdgeConvBlock(64, 64, k)
-        self.ec3 = EdgeConvBlock(64, 128, k)
-        self.ec4 = EdgeConvBlock(128, 256, k)
+        self.ec1 = EdgeConvBlock(input_dims, 64, k, dropout_p=dropout_p)
+        self.ec2 = EdgeConvBlock(64, 64, k, dropout_p=dropout_p)
+        self.ec3 = EdgeConvBlock(64, 128, k, dropout_p=dropout_p)
+        self.ec4 = EdgeConvBlock(128, 256, k, dropout_p=dropout_p)
+
+        # 多尺度 EdgeConv（并行不同 k），捕获不同邻域尺度的局部信息
+        if len(self.multi_scale_ks) > 0:
+            self.ms_blocks = nn.ModuleList([
+                EdgeConvBlock(input_dims, 64, k, dropout_p=dropout_p) for k in self.multi_scale_ks
+            ])
+        else:
+            self.ms_blocks = nn.ModuleList()
 
         # 拼接四层输出: 64 + 64 + 128 + 256 = 512
         concat_channels = 64 + 64 + 128 + 256
+        # 追加多尺度分支通道数（每个分支 64）
+        if len(self.ms_blocks) > 0:
+            concat_channels += 64 * len(self.ms_blocks)
         self.mlp = nn.Sequential(
             nn.Conv1d(concat_channels, 1024, kernel_size=1, bias=False),
             nn.BatchNorm1d(1024),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(p=dropout_p),
             nn.Conv1d(1024, feat_dim, kernel_size=1, bias=True),
+        )
+
+        # 全局特征融合：max + mean -> 线性投影回 feat_dim，兼顾鲁棒性与整体语义
+        self.global_fusion = nn.Sequential(
+            nn.Linear(feat_dim * 2, feat_dim),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -99,15 +119,26 @@ class DGCNNEncoder(nn.Module):
             # 可能是 (B, N, C)
             x = x.transpose(2, 1).contiguous()
 
+        # 并行多尺度 EdgeConv（直接从原始 x 提取多尺度特征）
+        ms_features = []
+        if len(self.ms_blocks) > 0:
+            for block in self.ms_blocks:
+                ms_features.append(block(x))  # (B,64,N) each
+
         x1 = self.ec1(x)  # (B,64,N)
         x2 = self.ec2(x1)  # (B,64,N)
         x3 = self.ec3(x2)  # (B,128,N)
         x4 = self.ec4(x3)  # (B,256,N)
 
-        x_cat = torch.cat([x1, x2, x3, x4], dim=1)  # (B,512,N)
+        feats_to_concat = [x1, x2, x3, x4]
+        if len(ms_features) > 0:
+            feats_to_concat.extend(ms_features)
+        x_cat = torch.cat(feats_to_concat, dim=1)  # (B, 512+MS, N)
         feat_map = self.mlp(x_cat)  # (B, feat_dim, N)
-        # 全局池化（max + mean 也可，这里用 max）
-        global_feat = torch.max(feat_map, dim=2, keepdim=False)[0]  # (B, feat_dim)
+        # 全局池化融合（max + mean）
+        global_max = torch.max(feat_map, dim=2, keepdim=False)[0]  # (B, feat_dim)
+        global_mean = torch.mean(feat_map, dim=2)  # (B, feat_dim)
+        global_feat = self.global_fusion(torch.cat([global_max, global_mean], dim=1))  # (B, feat_dim)
         return global_feat
 
 
