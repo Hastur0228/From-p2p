@@ -9,7 +9,7 @@ class PointwiseRegressor(nn.Module):
     采用共享 MLP（逐点线性层），对每个模板点独立回归。
     """
 
-    def __init__(self, global_feat_dim: int, hidden_dims: list[int] | tuple[int, ...] = (256, 256, 128)):
+    def __init__(self, global_feat_dim: int, hidden_dims: list[int] | tuple[int, ...] = (256, 256, 128), dropout_p: float = 0.1):
         super().__init__()
         in_dim = 3 + global_feat_dim
         dims = [in_dim, *hidden_dims, 3]
@@ -17,7 +17,7 @@ class PointwiseRegressor(nn.Module):
         for i in range(len(dims) - 2):
             layers.append(nn.Linear(dims[i], dims[i + 1]))
             layers.append(nn.ReLU(inplace=True))
-            layers.append(nn.Dropout(p=0.1))
+            layers.append(nn.Dropout(p=dropout_p))
         layers.append(nn.Linear(dims[-2], dims[-1]))
         self.mlp = nn.Sequential(*layers)
 
@@ -42,9 +42,9 @@ class DeformationNet(nn.Module):
     编码器（如 DGCNN）需在外部传入。
     """
 
-    def __init__(self, global_feat_dim: int, hidden_dims: list[int] | tuple[int, ...] = (256, 256, 128)):
+    def __init__(self, global_feat_dim: int, hidden_dims: list[int] | tuple[int, ...] = (256, 256, 128), dropout_p: float = 0.1):
         super().__init__()
-        self.regressor = PointwiseRegressor(global_feat_dim=global_feat_dim, hidden_dims=hidden_dims)
+        self.regressor = PointwiseRegressor(global_feat_dim=global_feat_dim, hidden_dims=hidden_dims, dropout_p=dropout_p)
 
     def forward(self, template_points: torch.Tensor, global_feat: torch.Tensor) -> torch.Tensor:
         offsets = self.regressor(template_points, global_feat)
