@@ -88,19 +88,31 @@ class FootInsoleDataset(Dataset):
         template_path: str | Path | None = None,
         random_shuffle_points: bool = True,
         side: str | None = None,
+        normalize_mode: str = 'center',
     ) -> None:
         super().__init__()
         self.data_root = Path(data_root)
         self.use_normals = use_normals
         self.num_points = num_points
         self.random_shuffle_points = random_shuffle_points
-        # 规范化模式：'sphere'（单位球）、'cube'（单位立方）、'center'（仅中心化）。默认使用 'center'，避免单位化缩放
-        self.normalize_mode = 'center'
+        # 规范化模式：'sphere'（单位球）、'cube'（单位立方）、'center'（仅中心化）。
+        self.normalize_mode = str(normalize_mode)
         if side is not None:
             side = side.upper()
             if side not in ("L", "R"):
                 raise ValueError("side 只能为 'L' 或 'R' 或 None")
         self.side = side
+        self.split = split
+        # 增强配置（由外部在构造后设置），默认关闭
+        self.augment_enable: bool = False
+        self.augment_multiplier: int = 1
+        self.aug_jitter_sigma_range: tuple[float, float] = (0.0, 0.0)
+        self.aug_dropout_patches_range: tuple[int, int] = (0, 0)
+        self.aug_dropout_radius_range: tuple[float, float] = (0.05, 0.15)
+        self.aug_normal_shift_range: tuple[float, float] = (0.0, 0.0)
+        self.aug_resample_mode: str = 'none'  # ['none','uniform','poisson']
+        self.aug_uniform_keep_range: tuple[float, float] = (0.6, 1.0)
+        self.aug_poisson_voxel_range: tuple[float, float] = (0.01, 0.04)
 
         feet_dir = self.data_root / 'feet'
         insoles_dir = self.data_root / 'insoles'
@@ -145,6 +157,7 @@ class FootInsoleDataset(Dataset):
 
         # 预先归一化并缓存每个样本，避免在 __getitem__ 中重复计算
         # 每个样本缓存: dict(foot, insole, template?, centroid, scale)
+        # 注意：训练集支持在 __getitem__ 中按需做数据增强，不在此处膨胀缓存尺寸
         self._cache: list[dict] = []
         eps = 1e-9
         for fp, ip in self.pairs:
@@ -175,7 +188,10 @@ class FootInsoleDataset(Dataset):
             self._cache.append(item)
 
     def __len__(self) -> int:
-        return len(self.pairs)
+        base = len(self.pairs)
+        if self.split == 'train' and self.augment_enable and self.augment_multiplier > 0:
+            return base * (1 + int(self.augment_multiplier))
+        return base
 
     def _maybe_subsample(self, arr: np.ndarray) -> np.ndarray:
         # 保证点数为 num_points，如不足则重复采样，如超出则随机下采样
@@ -190,8 +206,124 @@ class FootInsoleDataset(Dataset):
             idx = np.arange(N).repeat(repeat)[: self.num_points]
         return arr[idx]
 
+    # -------------------- 数据增强工具 --------------------
+    def _random_in_range(self, a: float, b: float) -> float:
+        lo = float(min(a, b))
+        hi = float(max(a, b))
+        return np.random.uniform(lo, hi)
+
+    def _random_int_in_range(self, a: int, b: int) -> int:
+        lo = int(min(a, b))
+        hi = int(max(a, b))
+        return int(np.random.randint(lo, hi + 1))
+
+    def _apply_point_jitter(self, xyz: np.ndarray) -> None:
+        sigma = self._random_in_range(*self.aug_jitter_sigma_range)
+        if sigma <= 0:
+            return
+        noise = np.random.normal(loc=0.0, scale=sigma, size=xyz.shape).astype(np.float32)
+        xyz += noise
+
+    def _apply_local_dropout(self, xyz: np.ndarray) -> np.ndarray:
+        num_patches = self._random_int_in_range(*self.aug_dropout_patches_range)
+        if num_patches <= 0:
+            return np.arange(xyz.shape[0], dtype=np.int64)
+        N = xyz.shape[0]
+        keep_mask = np.ones(N, dtype=bool)
+        for _ in range(num_patches):
+            center_idx = np.random.randint(0, N)
+            center = xyz[center_idx]
+            radius = self._random_in_range(*self.aug_dropout_radius_range)
+            if radius <= 0:
+                continue
+            d2 = np.sum((xyz - center) ** 2, axis=1)
+            keep_mask &= (d2 > (radius * radius))
+        # 若全部被删除，退化为保留全部
+        if not np.any(keep_mask):
+            keep_mask[:] = True
+        return np.nonzero(keep_mask)[0].astype(np.int64)
+
+    def _apply_normal_shift(self, arr: np.ndarray) -> None:
+        # arr: (N, 6) [xyz|normal]
+        if arr.shape[1] < 6:
+            return
+        mag = self._random_in_range(*self.aug_normal_shift_range)
+        if mag <= 0:
+            return
+        normals = arr[:, 3:6]
+        arr[:, 0:3] += normals * mag
+
+    def _apply_resample(self, xyz: np.ndarray) -> np.ndarray:
+        mode = (self.aug_resample_mode or 'none').lower()
+        if mode == 'none':
+            return np.arange(xyz.shape[0], dtype=np.int64)
+        N = xyz.shape[0]
+        if mode == 'uniform':
+            keep_ratio = self._random_in_range(*self.aug_uniform_keep_range)
+            keep_ratio = float(np.clip(keep_ratio, 0.1, 1.0))
+            M = max(1, int(round(N * keep_ratio)))
+            idx = np.random.choice(N, M, replace=False)
+            return np.sort(idx.astype(np.int64))
+        if mode == 'poisson':
+            # 以体素网格近似泊松盘采样（快速）
+            voxel = self._random_in_range(*self.aug_poisson_voxel_range)
+            voxel = max(1e-6, float(voxel))
+            mins = xyz.min(axis=0)
+            keys = np.floor((xyz - mins) / voxel).astype(np.int64)
+            # 哈希到字典，保留每个体素一个代表点
+            h = {}
+            for i, k in enumerate(map(tuple, keys)):
+                if k not in h:
+                    h[k] = i
+            sel = np.array(list(h.values()), dtype=np.int64)
+            return np.sort(sel)
+        return np.arange(xyz.shape[0], dtype=np.int64)
+
+    def _apply_augmentations(self, foot: np.ndarray, insole: np.ndarray, template: np.ndarray | None) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        # 深拷贝以免污染缓存
+        foot_aug = foot.copy()
+        insole_aug = insole.copy()
+        tpl_aug = None if template is None else template.copy()
+
+        # 1) 沿法向小偏移（仅 foot，若包含法向）
+        self._apply_normal_shift(foot_aug)
+
+        # 2) 点抖动（对 xyz 应用）
+        self._apply_point_jitter(foot_aug[:, 0:3])
+        self._apply_point_jitter(insole_aug[:, 0:3])
+        if tpl_aug is not None:
+            self._apply_point_jitter(tpl_aug[:, 0:3])
+
+        # 3) 局部 dropout（对 foot / insole / 模板独立执行，以引入多样性）
+        foot_keep = self._apply_local_dropout(foot_aug[:, 0:3])
+        insole_keep = self._apply_local_dropout(insole_aug[:, 0:3])
+        tpl_keep = None if tpl_aug is None else self._apply_local_dropout(tpl_aug[:, 0:3])
+
+        foot_aug = foot_aug[foot_keep]
+        insole_aug = insole_aug[insole_keep]
+        if tpl_aug is not None and tpl_keep is not None:
+            tpl_aug = tpl_aug[tpl_keep]
+
+        # 4) 重采样以改变点密度（近似 Poisson / Uniform）
+        foot_idx = self._apply_resample(foot_aug[:, 0:3])
+        insole_idx = self._apply_resample(insole_aug[:, 0:3])
+        foot_aug = foot_aug[foot_idx]
+        insole_aug = insole_aug[insole_idx]
+        if tpl_aug is not None:
+            tpl_idx = self._apply_resample(tpl_aug[:, 0:3])
+            tpl_aug = tpl_aug[tpl_idx]
+
+        return foot_aug, insole_aug, tpl_aug
+
     def __getitem__(self, idx: int):
-        cache = self._cache[idx]
+        base_len = len(self.pairs)
+        if self.split == 'train' and self.augment_enable and self.augment_multiplier > 0:
+            base_idx = idx % base_len
+            do_augment = (idx >= base_len)
+        else:
+            base_idx = idx
+            do_augment = False
+        cache = self._cache[base_idx]
         foot = cache['foot']
         insole = cache['insole']
         # 可选：随机打乱点顺序（不修改缓存，先复制）
@@ -201,9 +333,19 @@ class FootInsoleDataset(Dataset):
             np.random.shuffle(foot)
             np.random.shuffle(insole)
 
+        tpl = cache.get('template', None)
+        if tpl is not None and self.random_shuffle_points:
+            tpl = tpl.copy()
+
+        # 训练集增强：仅在扩展样本（idx>=base_len）时应用，原样本保留未增强版本
+        if do_augment:
+            foot, insole, tpl = self._apply_augmentations(foot, insole, tpl)
+
         # 下采样/补齐至固定点数
         foot = self._maybe_subsample(foot)
         insole = self._maybe_subsample(insole)
+        if tpl is not None:
+            tpl = self._maybe_subsample(tpl)
 
         item = {
             'foot': torch.from_numpy(foot),  # (N,C)
@@ -211,11 +353,7 @@ class FootInsoleDataset(Dataset):
             'centroid': torch.from_numpy(cache['centroid']).view(1, 3),  # (1,3)
             'scale': torch.tensor(float(cache['scale']), dtype=torch.float32),  # 标量
         }
-        if 'template' in cache and cache['template'] is not None:
-            tpl = cache['template']
-            if self.random_shuffle_points:
-                tpl = tpl.copy()
-            tpl = self._maybe_subsample(tpl)
+        if tpl is not None:
             item['template'] = torch.from_numpy(tpl)  # (N,3)
         return item
 
