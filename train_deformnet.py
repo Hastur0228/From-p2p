@@ -61,7 +61,7 @@ def parse_args(argv=None):
 	parser.add_argument('--local-cd-radius', type=float, default=0.2, help='局部邻域半径（与坐标同单位）')
 	parser.add_argument('--batch-size', type=int, default=12)
 	parser.add_argument('--epochs', type=int, default=100)
-	parser.add_argument('--lr', type=float, default=1e-3)
+	parser.add_argument('--lr', type=float, default=1e-4)
 	parser.add_argument('--weight-decay', type=float, default=1e-4, help='优化器权重衰减')
 	parser.add_argument('--scheduler', type=str, choices=['cosine', 'step', 'plateau', 'none'], default='cosine')
 	parser.add_argument('--step-size', type=int, default=40, help='StepLR 的步长')
@@ -87,6 +87,16 @@ def parse_args(argv=None):
 	parser.add_argument('--cd-chunk', type=int, default=1024, help='Chamfer 距离计算分块大小')
 	parser.add_argument('--global-cd-weight', type=float, default=1.0, help='全局 Chamfer Distance 的损失权重')
 	parser.add_argument('--offset-l2-weight', type=float, default=0.0, help='位移向量 L2 正则项权重')
+	# 数据增强参数
+	parser.add_argument('--aug-enable', action='store_true', help='启用训练阶段点云增强')
+	parser.add_argument('--aug-multiplier', type=int, default=8, help='每个原样本生成的增强版本数量（仅训练集）')
+	parser.add_argument('--aug-jitter-sigma', type=str, default='0.002,0.01', help='点抖动噪声的σ范围，按归一化尺度，例如 0.002,0.01')
+	parser.add_argument('--aug-dropout-patches', type=str, default='0,3', help='局部 dropout 的 patch 数量范围（闭区间），如 0,3 表示每样本随机删除 0~3 个局部区域')
+	parser.add_argument('--aug-dropout-radius', type=str, default='0.05,0.15', help='局部 dropout 的半径范围（与归一化坐标同单位）')
+	parser.add_argument('--aug-normal-shift', type=str, default='0.0,0.02', help='沿法向的小偏移幅度范围，仅当输入包含法向时生效，单位为归一化尺度')
+	parser.add_argument('--aug-resample', type=str, choices=['none', 'uniform', 'poisson'], default='poisson', help='改变点密度的重采样方式：none/uniform/poisson(近似)')
+	parser.add_argument('--aug-uniform-keep', type=str, default='0.6,1.0', help='uniform 重采样时保留比例范围（相对当前点数），例如 0.6,1.0')
+	parser.add_argument('--aug-poisson-voxel', type=str, default='0.01,0.04', help='poisson 近似(体素)采样的体素尺寸范围')
 	parser.add_argument('--save-dir', type=str, default='checkpoints')
 	parser.add_argument('--log-dir', type=str, default=str(Path('Log') / 'train'))
 	parser.add_argument('--num-workers', type=int, default=4)
@@ -133,6 +143,26 @@ def make_dataloaders(args, side: str | None = None, template_path: str | None = 
 	)
 	# 设置标准化模式
 	train_set.normalize_mode = args.normalize
+	# 配置数据增强（仅训练集）
+	if getattr(args, 'aug_enable', False):
+		train_set.augment_enable = True
+		train_set.augment_multiplier = max(1, int(getattr(args, 'aug_multiplier', 8)))
+		# 解析范围型参数
+		def _parse_range_pair(s: str, typ=float):
+			parts = [p.strip() for p in str(s).split(',') if p.strip()]
+			if len(parts) == 1:
+				v = typ(parts[0])
+				return (v, v)
+			if len(parts) >= 2:
+				return (typ(parts[0]), typ(parts[1]))
+			return (0.0, 0.0)
+		train_set.aug_jitter_sigma_range = _parse_range_pair(getattr(args, 'aug_jitter_sigma', '0.002,0.01'), float)
+		train_set.aug_dropout_patches_range = _parse_range_pair(getattr(args, 'aug_dropout_patches', '0,3'), int)
+		train_set.aug_dropout_radius_range = _parse_range_pair(getattr(args, 'aug_dropout_radius', '0.05,0.15'), float)
+		train_set.aug_normal_shift_range = _parse_range_pair(getattr(args, 'aug_normal_shift', '0.0,0.02'), float)
+		train_set.aug_resample_mode = str(getattr(args, 'aug_resample', 'poisson')).lower()
+		train_set.aug_uniform_keep_range = _parse_range_pair(getattr(args, 'aug_uniform_keep', '0.6,1.0'), float)
+		train_set.aug_poisson_voxel_range = _parse_range_pair(getattr(args, 'aug_poisson_voxel', '0.01,0.04'), float)
 
 	val_set = FootInsoleDataset(
 		data_root=args.data_root,
@@ -372,6 +402,12 @@ def train():
 		print(f"回归器隐藏层: {_parse_hidden_dims(args.hidden_dims)} | MLP Dropout={args.mlp_dropout}")
 		print(f"CD 分块: {args.cd_chunk}")
 		print(f"局部CD: weight={args.local_cd_weight} | patches={args.local_cd_patches} | radius={args.local_cd_radius}")
+		if getattr(args, 'aug_enable', False):
+			print("数据增强: 已启用")
+			print(f"  multiplier={getattr(args,'aug_multiplier',8)} | jitter_sigma={getattr(args,'aug_jitter_sigma','0.002,0.01')}")
+			print(f"  dropout_patches={getattr(args,'aug_dropout_patches','0,3')} | dropout_radius={getattr(args,'aug_dropout_radius','0.05,0.15')}")
+			print(f"  normal_shift={getattr(args,'aug_normal_shift','0.0,0.02')} | resample={getattr(args,'aug_resample','poisson')}")
+			print(f"  uniform_keep={getattr(args,'aug_uniform_keep','0.6,1.0')} | poisson_voxel={getattr(args,'aug_poisson_voxel','0.01,0.04')}")
 		print(f"损失权重: global_cd={args.global_cd_weight}, offset_l2={args.offset_l2_weight}")
 		print(f"提前停止: {'是' if args.early_stopping else '否'} | 耐心值: {args.patience} | 最小改善阈值: {args.min_delta}")
 		print(f"数据加载进程数: {args.num_workers} | 随机种子: {args.seed}")
