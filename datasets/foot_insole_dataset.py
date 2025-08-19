@@ -94,8 +94,8 @@ class FootInsoleDataset(Dataset):
         self.use_normals = use_normals
         self.num_points = num_points
         self.random_shuffle_points = random_shuffle_points
-        # 规范化模式：'sphere'（单位球）、'cube'（单位立方）、'center'（仅中心化）。默认改为 'center'
-        self.normalize_mode = 'center'
+        # 规范化模式：'sphere'（单位球）、'cube'（单位立方）、'center'（仅中心化）。默认使用 'sphere' 更利于尺度统一
+        self.normalize_mode = 'sphere'
         if side is not None:
             side = side.upper()
             if side not in ("L", "R"):
