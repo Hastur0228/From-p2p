@@ -45,13 +45,14 @@ def get_graph_feature(x: torch.Tensor, k: int) -> torch.Tensor:
 class EdgeConvBlock(nn.Module):
     """DGCNN 中的基本 EdgeConv 模块: [x_j - x_i, x_i] -> Conv2d -> BN -> LeakyReLU -> max_k"""
 
-    def __init__(self, in_channels: int, out_channels: int, k: int = 20):
+    def __init__(self, in_channels: int, out_channels: int, k: int = 20, dropout_p: float = 0.1):
         super().__init__()
         self.k = k
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels * 2, out_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Dropout2d(p=dropout_p),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -69,14 +70,14 @@ class DGCNNEncoder(nn.Module):
     - 默认为 4 个 EdgeConv 层，拼接后再经 MLP 聚合为全局特征。
     """
 
-    def __init__(self, input_dims: int = 3, k: int = 20, feat_dim: int = 512):
+    def __init__(self, input_dims: int = 3, k: int = 20, feat_dim: int = 512, dropout_p: float = 0.1):
         super().__init__()
         self.k = k
 
-        self.ec1 = EdgeConvBlock(input_dims, 64, k)
-        self.ec2 = EdgeConvBlock(64, 64, k)
-        self.ec3 = EdgeConvBlock(64, 128, k)
-        self.ec4 = EdgeConvBlock(128, 256, k)
+        self.ec1 = EdgeConvBlock(input_dims, 64, k, dropout_p=dropout_p)
+        self.ec2 = EdgeConvBlock(64, 64, k, dropout_p=dropout_p)
+        self.ec3 = EdgeConvBlock(64, 128, k, dropout_p=dropout_p)
+        self.ec4 = EdgeConvBlock(128, 256, k, dropout_p=dropout_p)
 
         # 拼接四层输出: 64 + 64 + 128 + 256 = 512
         concat_channels = 64 + 64 + 128 + 256
@@ -84,6 +85,7 @@ class DGCNNEncoder(nn.Module):
             nn.Conv1d(concat_channels, 1024, kernel_size=1, bias=False),
             nn.BatchNorm1d(1024),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(p=dropout_p),
             nn.Conv1d(1024, feat_dim, kernel_size=1, bias=True),
         )
 

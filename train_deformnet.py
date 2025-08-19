@@ -62,7 +62,7 @@ def parse_args(argv=None):
 	parser.add_argument('--batch-size', type=int, default=12)
 	parser.add_argument('--epochs', type=int, default=100)
 	parser.add_argument('--lr', type=float, default=1e-3)
-	parser.add_argument('--weight-decay', type=float, default=0.0, help='优化器权重衰减')
+	parser.add_argument('--weight-decay', type=float, default=1e-4, help='优化器权重衰减')
 	parser.add_argument('--scheduler', type=str, choices=['cosine', 'step', 'none'], default='cosine')
 	parser.add_argument('--step-size', type=int, default=40, help='StepLR 的步长')
 	parser.add_argument('--gamma', type=float, default=0.5, help='StepLR 衰减率')
