@@ -1,0 +1,6 @@
+/.history
+/__pycache__
+*.npy
+*.npz
+*.xyz
+*.stl

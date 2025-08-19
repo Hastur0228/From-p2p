@@ -1,0 +1,6 @@
+2025-08-18 17:16:57,282 | WARNING |   源文件未提供 normals，退回仅写出 xyz
+2025-08-18 17:16:57,302 | INFO |   写出: Models_xyz\average_insole_heightmap.xyz | 点数=128
+2025-08-18 17:16:57,304 | INFO |   模板写出: Models_xyz\templates\average_insole_heightmap.xyz | 点数=128
+2025-08-18 17:16:57,326 | INFO |   写出: Models_xyz\average_insole_template.xyz | 点数=4096 | 含法向量
+2025-08-18 17:16:57,342 | INFO |   模板写出: Models_xyz\templates\average_insole_template.xyz | 点数=4096 | 含法向量
+2025-08-18 17:16:57,342 | INFO | 完成：共处理 2 个文件（npy=0, npz=2），总点数=4224，含法向量文件数=1，模板鞋垫数量=2，输出目录: Models_xyz

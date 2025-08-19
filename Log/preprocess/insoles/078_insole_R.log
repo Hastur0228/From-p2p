@@ -1,0 +1,52 @@
+2025-08-19 13:01:39,864 | INFO | Input STL: D:\Cursor Repos\From p2p\data\raw\insoles\078_insole_R.stl
+2025-08-19 13:01:39,864 | INFO | Output log: D:\Cursor Repos\From p2p\Log\preprocess\insoles\078_insole_R.log
+2025-08-19 13:01:39,864 | INFO | Parameters: num_points=4096, candidate_multiplier=4, z_low_percent=None, z_high_percent=None, seed=None
+2025-08-19 13:01:39,864 | INFO | File: size_bytes=2580884, mtime=2025-08-14 09:53:38
+2025-08-19 13:01:39,864 | INFO | Env: python=3.11.13, numpy=2.1.2, trimesh=4.7.4, platform=Windows-10-10.0.26100-SP0
+2025-08-19 13:01:39,950 | INFO | Mesh: vertices=25810, faces=51616
+2025-08-19 13:01:39,988 | INFO | Mesh surface area: 40079.697778
+2025-08-19 13:01:40,016 | INFO | Mesh volume: 105918.809910
+2025-08-19 13:01:40,020 | INFO | Mesh AABB min=[-41.23210144042969, -123.23829650878906, -0.8978999853134155] max=[42.768001556396484, 121.76180267333984, 23.494400024414062]
+2025-08-19 13:01:40,020 | INFO | Boundary edges: 0
+2025-08-19 13:01:40,020 | INFO | Load mesh time: 156.1 ms
+2025-08-19 13:01:40,020 | INFO | Surface sampling: candidates=16384 (target=4096, multiplier=4)
+2025-08-19 13:01:40,040 | INFO | Running Farthest Point Sampling (FPS) to enforce even spacing
+2025-08-19 13:01:40,134 | INFO | FPS progress: 409/4096
+2025-08-19 13:01:40,241 | INFO | FPS progress: 818/4096
+2025-08-19 13:01:40,340 | INFO | FPS progress: 1227/4096
+2025-08-19 13:01:40,419 | INFO | FPS progress: 1636/4096
+2025-08-19 13:01:40,508 | INFO | FPS progress: 2045/4096
+2025-08-19 13:01:40,593 | INFO | FPS progress: 2454/4096
+2025-08-19 13:01:40,688 | INFO | FPS progress: 2863/4096
+2025-08-19 13:01:40,783 | INFO | FPS progress: 3272/4096
+2025-08-19 13:01:40,872 | INFO | FPS progress: 3681/4096
+2025-08-19 13:01:40,959 | INFO | FPS progress: 4090/4096
+2025-08-19 13:01:40,961 | INFO | Round 1: accumulated=4096, kept=4096 (100.00%), time=941.0 ms
+2025-08-19 13:01:40,962 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
+2025-08-19 13:01:40,962 | INFO | Sampled points: (4096, 3), normals: (4096, 3)
+2025-08-19 13:01:40,962 | INFO | Sampling time: 942.0 ms
+2025-08-19 13:01:40,962 | INFO | Centering only: centroid=[-4.110278399730731, -6.118891290410177, 4.1439307099516745] | scale fixed to 1.000000 (no scaling)
+2025-08-19 13:01:40,963 | INFO | Axis x stats (centered): min=-37.011001, mean=-0.000000, std=22.228834, max=46.802747
+2025-08-19 13:01:40,963 | INFO | Axis y stats (centered): min=-117.108684, mean=0.000000, std=66.558020, max=127.270908
+2025-08-19 13:01:40,963 | INFO | Axis z stats (centered): min=-5.040908, mean=0.000000, std=5.802874, max=19.311808
+2025-08-19 13:01:40,963 | INFO | Centering time: 1.1 ms
+2025-08-19 13:01:40,964 | INFO | PCA alignment: explained variance ratio=0.8976, 0.0971, 0.0052
+2025-08-19 13:01:40,964 | INFO | Rotation matrix (columns are principal axes):
+[[-0.060852 -0.995717 -0.0696  ]
+ [-0.997508  0.063159 -0.031444]
+ [ 0.035706  0.067513 -0.997079]]
+2025-08-19 13:01:40,964 | INFO | Rotation matrix det=1.000000
+2025-08-19 13:01:40,965 | INFO | Orientation enforcement: mean_nz=0.001782 -> sz=1, width_low=69.735162, width_high=57.638090 -> sx=-1, sy=-1
+2025-08-19 13:01:40,965 | INFO | Orientation signs diag(S)=[-1.0, -1.0, 1.0]
+2025-08-19 13:01:40,965 | INFO | PCA time: 2.1 ms
+2025-08-19 13:01:40,966 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
+2025-08-19 13:01:40,966 | INFO | Final points: (4096, 3), normals: (4096, 3)
+2025-08-19 13:01:40,967 | INFO | Aligned normalized AABB min=[-117.67223508211273, -40.33175574088461, -16.026235825883255] max=[127.49275122508602, 43.76427185545025, 10.08429487982497]
+2025-08-19 13:01:40,967 | INFO | Final radii percentiles: p5=18.092684, p50=61.489487, p95=113.910534; centroid_norm=0.000000
+2025-08-19 13:01:40,967 | INFO | Axis x stats (final): min=-117.672235, mean=0.000000, std=66.709635, max=127.492751
+2025-08-19 13:01:40,967 | INFO | Axis y stats (final): min=-40.331756, mean=-0.000000, std=21.946140, max=43.764272
+2025-08-19 13:01:40,967 | INFO | Axis z stats (final): min=-16.026236, mean=-0.000000, std=5.094698, max=10.084295
+2025-08-19 13:01:40,967 | INFO | Normal lengths: min=1.000000, mean=1.000000, max=1.000000
+2025-08-19 13:01:40,969 | INFO | Final FPS time: 2.0 ms
+2025-08-19 13:01:40,991 | INFO | Saved bundle (npz): D:\Cursor Repos\From p2p\data\pointcloud\insoles\078_insole_R.npz | points=(4096, 3) normals=(4096, 3)
+2025-08-19 13:01:40,991 | INFO | Completed successfully.
