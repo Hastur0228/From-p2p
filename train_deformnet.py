@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR, ReduceLROnPlateau
 try:
 	import matplotlib
 	matplotlib.use('Agg')  # 无显示环境下保存图片
@@ -63,9 +63,15 @@ def parse_args(argv=None):
 	parser.add_argument('--epochs', type=int, default=100)
 	parser.add_argument('--lr', type=float, default=1e-3)
 	parser.add_argument('--weight-decay', type=float, default=1e-4, help='优化器权重衰减')
-	parser.add_argument('--scheduler', type=str, choices=['cosine', 'step', 'none'], default='cosine')
+	parser.add_argument('--scheduler', type=str, choices=['cosine', 'step', 'plateau', 'none'], default='cosine')
 	parser.add_argument('--step-size', type=int, default=40, help='StepLR 的步长')
 	parser.add_argument('--gamma', type=float, default=0.5, help='StepLR 衰减率')
+	# 学习率 warmup 与 Plateau 调度
+	parser.add_argument('--warmup-epochs', type=int, default=0, help='学习率 warmup 轮数（0 关闭）')
+	parser.add_argument('--warmup-start-factor', type=float, default=0.1, help='warmup 起始因子，相对 base lr')
+	parser.add_argument('--plateau-patience', type=int, default=10, help='ReduceLROnPlateau 的耐心轮数')
+	parser.add_argument('--plateau-factor', type=float, default=0.5, help='ReduceLROnPlateau 的衰减因子')
+	parser.add_argument('--plateau-min-lr', type=float, default=1e-6, help='ReduceLROnPlateau 的最小学习率')
 	# 提前停止参数
 	parser.add_argument('--early-stopping', action='store_true', help='启用提前停止机制')
 	parser.add_argument('--patience', type=int, default=20, help='提前停止耐心值（验证损失连续不改善的轮数）')
@@ -76,8 +82,11 @@ def parse_args(argv=None):
 	parser.add_argument('--dgcnn-dropout', type=float, default=0.1, help='DGCNN 内部 Dropout 概率')
 	parser.add_argument('--dgcnn-multi-scale-ks', type=str, default='10,20,30', help='多尺度 EdgeConv 的 k 列表，如: 10,20,30；留空禁用')
 	parser.add_argument('--hidden-dims', type=str, default='256,256,128', help='回归器隐藏层维度（逗号分隔）')
+	parser.add_argument('--mlp-dropout', type=float, default=0.2, help='回归器 MLP 的 Dropout 概率')
 	# 损失/评估参数
 	parser.add_argument('--cd-chunk', type=int, default=1024, help='Chamfer 距离计算分块大小')
+	parser.add_argument('--global-cd-weight', type=float, default=1.0, help='全局 Chamfer Distance 的损失权重')
+	parser.add_argument('--offset-l2-weight', type=float, default=0.0, help='位移向量 L2 正则项权重')
 	parser.add_argument('--save-dir', type=str, default='checkpoints')
 	parser.add_argument('--log-dir', type=str, default=str(Path('Log') / 'train'))
 	parser.add_argument('--num-workers', type=int, default=4)
@@ -167,7 +176,7 @@ def build_model(args):
 		dropout_p=getattr(args, 'dgcnn_dropout', 0.1),
 		multi_scale_ks=ms_ks,
 	)
-	regressor = DeformationNet(global_feat_dim=args.dgcnn_feat_dim, hidden_dims=_parse_hidden_dims(args.hidden_dims))
+	regressor = DeformationNet(global_feat_dim=args.dgcnn_feat_dim, hidden_dims=_parse_hidden_dims(args.hidden_dims), dropout_p=getattr(args, 'mlp_dropout', 0.2))
 	return encoder, regressor
 
 
@@ -269,17 +278,21 @@ def train():
 		args.weight_decay = _maybe_change("权重衰减", args.weight_decay, _defaults.weight_decay, float)
 
 		# scheduler 选择
-		print(f"调度器: 当前={args.scheduler} | 可选=['cosine','step','none']")
+		print(f"调度器: 当前={args.scheduler} | 可选=['cosine','step','plateau','none']")
 		if _prompt_yes_no("是否更改调度器?", default_yes=False):
 			def _cast_sched(s: str) -> str:
 				s = s.strip().lower()
-				if s not in ('cosine', 'step', 'none'):
+				if s not in ('cosine', 'step', 'plateau', 'none'):
 					raise ValueError('非法调度器')
 				return s
-			args.scheduler = _prompt_typed("请输入调度器 (cosine|step|none)", _cast_sched, args.scheduler)
+			args.scheduler = _prompt_typed("请输入调度器 (cosine|step|plateau|none)", _cast_sched, args.scheduler)
 		if args.scheduler == 'step':
 			args.step_size = _maybe_change("StepLR 步长", args.step_size, _defaults.step_size, int)
 			args.gamma = _maybe_change("StepLR 衰减率", args.gamma, _defaults.gamma, float)
+		if args.scheduler == 'plateau':
+			args.plateau_patience = _maybe_change("Plateau 耐心", args.plateau_patience, _defaults.plateau_patience, int)
+			args.plateau_factor = _maybe_change("Plateau 衰减因子", args.plateau_factor, _defaults.plateau_factor, float)
+			args.plateau_min_lr = _maybe_change("Plateau 最小 lr", args.plateau_min_lr, _defaults.plateau_min_lr, float)
 
 		# 数据集相关
 		args.use_normals = _prompt_yes_no(
@@ -349,13 +362,17 @@ def train():
 		print(f"调度器: {args.scheduler}")
 		if args.scheduler == 'step':
 			print(f"  StepLR: step_size={args.step_size}, gamma={args.gamma}")
+		if args.scheduler == 'plateau':
+			print(f"  Plateau: patience={args.plateau_patience}, factor={args.plateau_factor}, min_lr={args.plateau_min_lr}")
+		print(f"Warmup: epochs={args.warmup_epochs}, start_factor={args.warmup_start_factor}")
 		print(f"使用法向: {'是' if args.use_normals else '否'}")
 		print(f"点数: {args.num_points} | 验证集比例: {args.val_ratio} | 打乱: {'是' if not args.no_shuffle else '否'}")
 		print(f"标准化: {args.normalize}")
 		print(f"DGCNN: k={args.dgcnn_k}, feat_dim={args.dgcnn_feat_dim}, dropout={args.dgcnn_dropout}, ms_ks={args.dgcnn_multi_scale_ks}")
-		print(f"回归器隐藏层: {_parse_hidden_dims(args.hidden_dims)}")
+		print(f"回归器隐藏层: {_parse_hidden_dims(args.hidden_dims)} | MLP Dropout={args.mlp_dropout}")
 		print(f"CD 分块: {args.cd_chunk}")
 		print(f"局部CD: weight={args.local_cd_weight} | patches={args.local_cd_patches} | radius={args.local_cd_radius}")
+		print(f"损失权重: global_cd={args.global_cd_weight}, offset_l2={args.offset_l2_weight}")
 		print(f"提前停止: {'是' if args.early_stopping else '否'} | 耐心值: {args.patience} | 最小改善阈值: {args.min_delta}")
 		print(f"数据加载进程数: {args.num_workers} | 随机种子: {args.seed}")
 		print(f"日志目录: {args.log_dir} | 模型保存目录: {args.save_dir}")
@@ -401,6 +418,8 @@ def train():
 			scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs)
 		elif args.scheduler == 'step':
 			scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
+		elif args.scheduler == 'plateau':
+			scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.plateau_factor, patience=args.plateau_patience, min_lr=args.plateau_min_lr)
 		else:
 			scheduler = None
 
@@ -418,6 +437,12 @@ def train():
 		for epoch in range(1, args.epochs + 1):
 			encoder.train()
 			regressor.train()
+			# 学习率 warmup（按 epoch 线性上升）
+			if args.warmup_epochs and epoch <= args.warmup_epochs:
+				warmup_progress = 0.0 if args.warmup_epochs <= 1 else float(epoch - 1) / float(args.warmup_epochs - 1)
+				factor = args.warmup_start_factor + (1.0 - args.warmup_start_factor) * warmup_progress
+				for pg in optimizer.param_groups:
+					pg['lr'] = args.lr * factor
 			running = 0.0
 			count = 0
 			# epoch 进度条
@@ -436,8 +461,8 @@ def train():
 				# 点级回归 -> 预测鞋垫
 				pred = regressor(template, global_feat)  # (B,N,3)
 
-				# Chamfer Distance 监督 + 可选局部 CD
-				loss = chamfer_distance(pred, target, reduction='mean', chunk=args.cd_chunk)
+				# Chamfer Distance 监督（可加权）
+				loss = args.global_cd_weight * chamfer_distance(pred, target, reduction='mean', chunk=args.cd_chunk)
 				if args.local_cd_weight > 0:
 					lcd = local_chamfer_distance(
 						pred, target,
@@ -447,6 +472,11 @@ def train():
 						chunk=args.cd_chunk,
 					)
 					loss = loss + args.local_cd_weight * lcd
+				# 位移 L2 正则
+				if args.offset_l2_weight > 0:
+					offsets = pred - template
+					reg_l2 = torch.mean(torch.sum(offsets * offsets, dim=-1))
+					loss = loss + args.offset_l2_weight * reg_l2
 				loss.backward()
 				optimizer.step()
 
@@ -474,8 +504,12 @@ def train():
 			hist_val_loss.append(val_loss)
 			
 
-			if scheduler is not None:
-				scheduler.step()
+			# 调度器更新：warmup 阶段不更新主调度器
+			if scheduler is not None and (not args.warmup_epochs or epoch > args.warmup_epochs):
+				if isinstance(scheduler, ReduceLROnPlateau):
+					scheduler.step(val_loss)
+				else:
+					scheduler.step()
 
 			# 保存最佳模型和提前停止检查
 			if val_loss < best_val - args.min_delta:
