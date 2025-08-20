@@ -60,16 +60,16 @@ def parse_args(argv=None):
 	parser.add_argument('--local-cd-patches', type=int, default=64, help='每样本局部 patch 数量')
 	parser.add_argument('--local-cd-radius', type=float, default=0.2, help='局部邻域半径（与坐标同单位）')
 	parser.add_argument('--batch-size', type=int, default=12)
-	parser.add_argument('--epochs', type=int, default=100)
-	parser.add_argument('--lr', type=float, default=1e-4)
-	parser.add_argument('--weight-decay', type=float, default=1e-4, help='优化器权重衰减')
-	parser.add_argument('--scheduler', type=str, choices=['cosine', 'step', 'plateau', 'none'], default='cosine')
+	parser.add_argument('--epochs', type=int, default=200)
+	parser.add_argument('--lr', type=float, default=5e-4)
+	parser.add_argument('--weight-decay', type=float, default=1e-3, help='优化器权重衰减')
+	parser.add_argument('--scheduler', type=str, choices=['cosine', 'step', 'plateau', 'none'], default='plateau')
 	parser.add_argument('--step-size', type=int, default=40, help='StepLR 的步长')
 	parser.add_argument('--gamma', type=float, default=0.5, help='StepLR 衰减率')
 	# 学习率 warmup 与 Plateau 调度
-	parser.add_argument('--warmup-epochs', type=int, default=0, help='学习率 warmup 轮数（0 关闭）')
+	parser.add_argument('--warmup-epochs', type=int, default=5, help='学习率 warmup 轮数（0 关闭）')
 	parser.add_argument('--warmup-start-factor', type=float, default=0.1, help='warmup 起始因子，相对 base lr')
-	parser.add_argument('--plateau-patience', type=int, default=10, help='ReduceLROnPlateau 的耐心轮数')
+	parser.add_argument('--plateau-patience', type=int, default=5, help='ReduceLROnPlateau 的耐心轮数')
 	parser.add_argument('--plateau-factor', type=float, default=0.5, help='ReduceLROnPlateau 的衰减因子')
 	parser.add_argument('--plateau-min-lr', type=float, default=1e-6, help='ReduceLROnPlateau 的最小学习率')
 	# 提前停止参数
@@ -78,14 +78,15 @@ def parse_args(argv=None):
 	parser.add_argument('--min-delta', type=float, default=1e-6, help='提前停止最小改善阈值')
 	# 模型参数
 	parser.add_argument('--dgcnn-k', type=int, default=20, help='DGCNN 邻域点数 k')
-	parser.add_argument('--dgcnn-feat-dim', type=int, default=512, help='DGCNN 输出全局特征维度')
-	parser.add_argument('--dgcnn-dropout', type=float, default=0.1, help='DGCNN 内部 Dropout 概率')
+	parser.add_argument('--dgcnn-feat-dim', type=int, default=256, help='DGCNN 输出全局特征维度')
+	parser.add_argument('--dgcnn-dropout', type=float, default=0.3, help='DGCNN 内部 Dropout 概率')
 	parser.add_argument('--dgcnn-multi-scale-ks', type=str, default='10,20,30', help='多尺度 EdgeConv 的 k 列表，如: 10,20,30；留空禁用')
 	parser.add_argument('--hidden-dims', type=str, default='256,256,128', help='回归器隐藏层维度（逗号分隔）')
-	parser.add_argument('--mlp-dropout', type=float, default=0.2, help='回归器 MLP 的 Dropout 概率')
+	parser.add_argument('--mlp-dropout', type=float, default=0.4, help='回归器 MLP 的 Dropout 概率')
 	# 损失/评估参数
 	parser.add_argument('--cd-chunk', type=int, default=1024, help='Chamfer 距离计算分块大小')
 	parser.add_argument('--global-cd-weight', type=float, default=1.0, help='全局 Chamfer Distance 的损失权重')
+	parser.add_argument('--local-cd-weight', type=float, default=0.1, help='局部 Chamfer Distance 的损失权重 (0 关闭)')
 	parser.add_argument('--offset-l2-weight', type=float, default=0.0, help='位移向量 L2 正则项权重')
 	# 数据增强参数
 	parser.add_argument('--aug-enable', action='store_true', help='启用训练阶段点云增强')
@@ -267,8 +268,18 @@ def train():
 	args = parse_args()
 	# 交互式参数确认（默认开启，可通过 --no-interactive 关闭）
 	if not args.no_interactive:
-		# 提取默认参数，用于展示对比，并逐项询问是否更改
+		# 提取默认参数，用于展示对比
 		_defaults = parse_args([])
+
+		def _prompt_typed(prompt: str, caster, default_value):
+			while True:
+				raw = input(f"{prompt} [默认: {default_value}]: ").strip()
+				if raw == '':
+					return default_value
+				try:
+					return caster(raw)
+				except Exception:
+					print("输入无效，请重试。")
 
 		def _prompt_yes_no(prompt: str, default_yes: bool = True) -> bool:
 			hint = 'Y/n' if default_yes else 'y/N'
@@ -282,105 +293,193 @@ def train():
 					return False
 				print("请输入 y 或 n。")
 
-		def _prompt_typed(prompt: str, caster, default_value):
-			while True:
-				raw = input(f"{prompt} [默认: {default_value}]: ").strip()
-				if raw == '':
-					return default_value
-				try:
-					return caster(raw)
-				except Exception:
-					print("输入无效，请重试。")
+		def _cast_sched(s: str) -> str:
+			s = s.strip().lower()
+			if s not in ('cosine', 'step', 'plateau', 'none'):
+				raise ValueError('非法调度器')
+			return s
 
-		def _maybe_change(label: str, cur, dft, caster):
-			print(f"{label}: 当前={cur} | 默认={dft}")
-			if _prompt_yes_no("是否更改此参数?", default_yes=False):
-				return _prompt_typed(f"请输入新的 {label}", caster, cur)
-			return cur
+		def _cast_norm(s: str) -> str:
+			s = s.strip().lower()
+			if s not in ('center', 'sphere', 'cube'):
+				raise ValueError('非法标准化方式')
+			return s
 
-		print("=== 交互式参数设置（逐项询问是否更改）===")
-		args.data_root = _maybe_change("数据根目录", args.data_root, _defaults.data_root, str)
-		args.template = _maybe_change("模板路径", args.template, _defaults.template, str)
-		args.device = _maybe_change("设备", args.device, _defaults.device, str)
-		args.batch_size = _maybe_change("批大小", args.batch_size, _defaults.batch_size, int)
-		args.epochs = _maybe_change("轮数", args.epochs, _defaults.epochs, int)
-		args.lr = _maybe_change("学习率", args.lr, _defaults.lr, float)
-		args.weight_decay = _maybe_change("权重衰减", args.weight_decay, _defaults.weight_decay, float)
+		def _cast_resample(s: str) -> str:
+			s = s.strip().lower()
+			if s not in ('none', 'uniform', 'poisson'):
+				raise ValueError('非法重采样方式')
+			return s
 
-		# scheduler 选择
-		print(f"调度器: 当前={args.scheduler} | 可选=['cosine','step','plateau','none']")
-		if _prompt_yes_no("是否更改调度器?", default_yes=False):
-			def _cast_sched(s: str) -> str:
-				s = s.strip().lower()
-				if s not in ('cosine', 'step', 'plateau', 'none'):
-					raise ValueError('非法调度器')
-				return s
-			args.scheduler = _prompt_typed("请输入调度器 (cosine|step|plateau|none)", _cast_sched, args.scheduler)
+		print("=== 交互式参数设置 ===")
+		print("请输入要修改的参数序号，输入0结束修改：")
+		
+		while True:
+			# 显示参数列表
+			print("\n可修改的参数列表：")
+			param_list = [
+				("数据根目录", args.data_root, _defaults.data_root, str),
+				("模板路径", args.template, _defaults.template, str),
+				("设备", args.device, _defaults.device, str),
+				("批大小", args.batch_size, _defaults.batch_size, int),
+				("轮数", args.epochs, _defaults.epochs, int),
+				("学习率", args.lr, _defaults.lr, float),
+				("权重衰减", args.weight_decay, _defaults.weight_decay, float),
+				("调度器", args.scheduler, _defaults.scheduler, _cast_sched),
+				("使用法向", "是" if args.use_normals else "否", "是" if _defaults.use_normals else "否", lambda x: x.lower() in ('y', 'yes', '是')),
+				("每样本点数", args.num_points, _defaults.num_points, int),
+				("验证集比例", args.val_ratio, _defaults.val_ratio, float),
+				("训练时打乱点顺序", "是" if not args.no_shuffle else "否", "是" if not _defaults.no_shuffle else "否", lambda x: x.lower() in ('y', 'yes', '是')),
+				("标准化方式", args.normalize, _defaults.normalize, _cast_norm),
+				("DGCNN 邻域 k", args.dgcnn_k, _defaults.dgcnn_k, int),
+				("DGCNN 特征维度", args.dgcnn_feat_dim, _defaults.dgcnn_feat_dim, int),
+				("DGCNN Dropout 概率", args.dgcnn_dropout, _defaults.dgcnn_dropout, float),
+				("多尺度 k 列表(逗号分隔)", args.dgcnn_multi_scale_ks, _defaults.dgcnn_multi_scale_ks, str),
+				("回归器隐藏层(逗号分隔)", args.hidden_dims, _defaults.hidden_dims, str),
+				("Chamfer 分块大小", args.cd_chunk, _defaults.cd_chunk, int),
+				("启用局部CD", "是" if args.local_cd_weight > 0 else "否", "是" if _defaults.local_cd_weight > 0 else "否", lambda x: x.lower() in ('y', 'yes', '是')),
+				("局部CD 权重", args.local_cd_weight, _defaults.local_cd_weight, float),
+				("局部CD patch 数", args.local_cd_patches, _defaults.local_cd_patches, int),
+				("局部CD 半径", args.local_cd_radius, _defaults.local_cd_radius, float),
+				("启用提前停止", "是" if args.early_stopping else "否", "是" if _defaults.early_stopping else "否", lambda x: x.lower() in ('y', 'yes', '是')),
+				("提前停止耐心值", args.patience, _defaults.patience, int),
+				("提前停止最小改善阈值", args.min_delta, _defaults.min_delta, float),
+				("启用数据增强", "是" if getattr(args, 'aug_enable', False) else "否", "否", lambda x: x.lower() in ('y', 'yes', '是')),
+				("数据增强倍数", getattr(args, 'aug_multiplier', 8), 8, int),
+				("抖动噪声σ范围", getattr(args, 'aug_jitter_sigma', '0.002,0.01'), '0.002,0.01', str),
+				("局部dropout patch数范围", getattr(args, 'aug_dropout_patches', '0,3'), '0,3', str),
+				("局部dropout半径范围", getattr(args, 'aug_dropout_radius', '0.05,0.15'), '0.05,0.15', str),
+				("法向偏移范围", getattr(args, 'aug_normal_shift', '0.0,0.02'), '0.0,0.02', str),
+				("重采样方式", getattr(args, 'aug_resample', 'poisson'), 'poisson', _cast_resample),
+				("uniform重采样保留比例范围", getattr(args, 'aug_uniform_keep', '0.6,1.0'), '0.6,1.0', str),
+				("poisson重采样体素尺寸范围", getattr(args, 'aug_poisson_voxel', '0.01,0.04'), '0.01,0.04', str),
+				("数据加载进程数", args.num_workers, _defaults.num_workers, int),
+				("随机种子", args.seed, _defaults.seed, int),
+				("日志目录", args.log_dir, _defaults.log_dir, str),
+				("模型保存目录", args.save_dir, _defaults.save_dir, str),
+			]
+
+			for i, (label, current, default, caster) in enumerate(param_list, 1):
+				print(f"{i:2d}. {label}: 当前={current} | 默认={default}")
+
+			# 获取用户选择
+			try:
+				choice = input("\n请输入参数序号 (0退出): ").strip()
+				if choice == '0':
+					break
+				
+				choice_idx = int(choice) - 1
+				if choice_idx < 0 or choice_idx >= len(param_list):
+					print("无效的序号，请重新输入。")
+					continue
+				
+				label, current, default, caster = param_list[choice_idx]
+				
+				# 特殊处理布尔类型参数
+				if label in ["使用法向", "训练时打乱点顺序", "启用局部CD", "启用提前停止", "启用数据增强"]:
+					new_value = _prompt_typed(f"请输入新的 {label} (y/n)", caster, current)
+					if label == "使用法向":
+						args.use_normals = new_value
+					elif label == "训练时打乱点顺序":
+						args.no_shuffle = not new_value
+					elif label == "启用局部CD":
+						if not new_value:
+							args.local_cd_weight = 0.0
+					elif label == "启用提前停止":
+						args.early_stopping = new_value
+					elif label == "启用数据增强":
+						args.aug_enable = new_value
+				else:
+					new_value = _prompt_typed(f"请输入新的 {label}", caster, current)
+					
+					# 根据参数名设置对应的属性
+					if label == "数据根目录":
+						args.data_root = new_value
+					elif label == "模板路径":
+						args.template = new_value
+					elif label == "设备":
+						args.device = new_value
+					elif label == "批大小":
+						args.batch_size = new_value
+					elif label == "轮数":
+						args.epochs = new_value
+					elif label == "学习率":
+						args.lr = new_value
+					elif label == "权重衰减":
+						args.weight_decay = new_value
+					elif label == "调度器":
+						args.scheduler = new_value
+					elif label == "每样本点数":
+						args.num_points = new_value
+					elif label == "验证集比例":
+						args.val_ratio = new_value
+					elif label == "标准化方式":
+						args.normalize = new_value
+					elif label == "DGCNN 邻域 k":
+						args.dgcnn_k = new_value
+					elif label == "DGCNN 特征维度":
+						args.dgcnn_feat_dim = new_value
+					elif label == "DGCNN Dropout 概率":
+						args.dgcnn_dropout = new_value
+					elif label == "多尺度 k 列表(逗号分隔)":
+						args.dgcnn_multi_scale_ks = new_value
+					elif label == "回归器隐藏层(逗号分隔)":
+						args.hidden_dims = new_value
+					elif label == "Chamfer 分块大小":
+						args.cd_chunk = new_value
+					elif label == "局部CD 权重":
+						args.local_cd_weight = new_value
+					elif label == "局部CD patch 数":
+						args.local_cd_patches = new_value
+					elif label == "局部CD 半径":
+						args.local_cd_radius = new_value
+					elif label == "提前停止耐心值":
+						args.patience = new_value
+					elif label == "提前停止最小改善阈值":
+						args.min_delta = new_value
+					elif label == "数据增强倍数":
+						args.aug_multiplier = new_value
+					elif label == "抖动噪声σ范围":
+						args.aug_jitter_sigma = new_value
+					elif label == "局部dropout patch数范围":
+						args.aug_dropout_patches = new_value
+					elif label == "局部dropout半径范围":
+						args.aug_dropout_radius = new_value
+					elif label == "法向偏移范围":
+						args.aug_normal_shift = new_value
+					elif label == "重采样方式":
+						args.aug_resample = new_value
+					elif label == "uniform重采样保留比例范围":
+						args.aug_uniform_keep = new_value
+					elif label == "poisson重采样体素尺寸范围":
+						args.aug_poisson_voxel = new_value
+					elif label == "数据加载进程数":
+						args.num_workers = new_value
+					elif label == "随机种子":
+						args.seed = new_value
+					elif label == "日志目录":
+						args.log_dir = new_value
+					elif label == "模型保存目录":
+						args.save_dir = new_value
+				
+				print(f"已修改 {label}: {new_value}")
+				
+			except ValueError:
+				print("请输入有效的数字。")
+			except KeyboardInterrupt:
+				print("\n用户中断，退出参数设置。")
+				break
+
+		# 处理调度器相关参数
 		if args.scheduler == 'step':
-			args.step_size = _maybe_change("StepLR 步长", args.step_size, _defaults.step_size, int)
-			args.gamma = _maybe_change("StepLR 衰减率", args.gamma, _defaults.gamma, float)
+			print(f"\nStepLR 参数:")
+			args.step_size = _prompt_typed("StepLR 步长", int, args.step_size)
+			args.gamma = _prompt_typed("StepLR 衰减率", float, args.gamma)
 		if args.scheduler == 'plateau':
-			args.plateau_patience = _maybe_change("Plateau 耐心", args.plateau_patience, _defaults.plateau_patience, int)
-			args.plateau_factor = _maybe_change("Plateau 衰减因子", args.plateau_factor, _defaults.plateau_factor, float)
-			args.plateau_min_lr = _maybe_change("Plateau 最小 lr", args.plateau_min_lr, _defaults.plateau_min_lr, float)
-
-		# 数据集相关
-		args.use_normals = _prompt_yes_no(
-			f"使用法向? (当前: {'是' if args.use_normals else '否'})",
-			default_yes=args.use_normals,
-		)
-		args.num_points = _maybe_change("每样本点数", args.num_points, _defaults.num_points, int)
-		args.val_ratio = _maybe_change("验证集比例", args.val_ratio, _defaults.val_ratio, float)
-		# 打乱：内部参数为 no_shuffle，交互使用正向语义
-		shuffle_now = not args.no_shuffle
-		shuffle_now = _prompt_yes_no(f"训练时打乱点顺序? (当前: {'是' if shuffle_now else '否'})", default_yes=shuffle_now)
-		args.no_shuffle = (not shuffle_now)
-
-		# 标准化方式
-		print(f"标准化方式: 当前={args.normalize} | 可选=['center','sphere','cube']")
-		if _prompt_yes_no("是否更改标准化方式?", default_yes=False):
-			def _cast_norm(s: str) -> str:
-				s = s.strip().lower()
-				if s not in ('center', 'sphere', 'cube'):
-					raise ValueError('非法标准化方式')
-				return s
-			args.normalize = _prompt_typed("请输入标准化方式 (center|sphere|cube)", _cast_norm, args.normalize)
-
-		# 模型结构
-		args.dgcnn_k = _maybe_change("DGCNN 邻域 k", args.dgcnn_k, _defaults.dgcnn_k, int)
-		args.dgcnn_feat_dim = _maybe_change("DGCNN 特征维度", args.dgcnn_feat_dim, _defaults.dgcnn_feat_dim, int)
-		args.dgcnn_dropout = _maybe_change("DGCNN Dropout 概率", args.dgcnn_dropout, _defaults.dgcnn_dropout, float)
-		args.dgcnn_multi_scale_ks = _maybe_change("多尺度 k 列表(逗号分隔)", args.dgcnn_multi_scale_ks, _defaults.dgcnn_multi_scale_ks, str)
-		args.hidden_dims = _maybe_change("回归器隐藏层(逗号分隔)", args.hidden_dims, _defaults.hidden_dims, str)
-
-		# 损失/评估
-		args.cd_chunk = _maybe_change("Chamfer 分块大小", args.cd_chunk, _defaults.cd_chunk, int)
-		# 局部 CD 开关与参数
-		enable_local_cd = _prompt_yes_no(
-			f"启用局部CD? (当前: {'是' if args.local_cd_weight > 0 else '否'})",
-			default_yes=(args.local_cd_weight > 0),
-		)
-		if enable_local_cd:
-			args.local_cd_weight = _maybe_change("局部CD 权重", args.local_cd_weight, _defaults.local_cd_weight, float)
-			args.local_cd_patches = _maybe_change("局部CD patch 数", args.local_cd_patches, _defaults.local_cd_patches, int)
-			args.local_cd_radius = _maybe_change("局部CD 半径", args.local_cd_radius, _defaults.local_cd_radius, float)
-		else:
-			args.local_cd_weight = 0.0
-
-		# 提前停止参数
-		args.early_stopping = _prompt_yes_no(
-			f"启用提前停止? (当前: {'是' if args.early_stopping else '否'})",
-			default_yes=args.early_stopping,
-		)
-		if args.early_stopping:
-			args.patience = _maybe_change("提前停止耐心值", args.patience, _defaults.patience, int)
-			args.min_delta = _maybe_change("提前停止最小改善阈值", args.min_delta, _defaults.min_delta, float)
-
-		# 其余
-		args.num_workers = _maybe_change("数据加载进程数", args.num_workers, _defaults.num_workers, int)
-		args.seed = _maybe_change("随机种子", args.seed, _defaults.seed, int)
-		args.log_dir = _maybe_change("日志目录", args.log_dir, _defaults.log_dir, str)
-		args.save_dir = _maybe_change("模型保存目录", args.save_dir, _defaults.save_dir, str)
+			print(f"\nPlateau 参数:")
+			args.plateau_patience = _prompt_typed("Plateau 耐心", int, args.plateau_patience)
+			args.plateau_factor = _prompt_typed("Plateau 衰减因子", float, args.plateau_factor)
+			args.plateau_min_lr = _prompt_typed("Plateau 最小 lr", float, args.plateau_min_lr)
 
 		# 最终汇总与确认
 		print("\n=== 配置预览 ===")

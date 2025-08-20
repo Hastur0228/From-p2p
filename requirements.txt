@@ -1,5 +1,27 @@
-numpy>=1.23
+# Core dependencies
+numpy>=1.23.0
+torch>=2.1.0
+torchvision>=0.16.0
+
+# 3D processing and visualization
 trimesh>=4.0.0
-torch>=2.1
-matplotlib>=3.7
+open3d>=0.17.0
+matplotlib>=3.7.0
+
+# Data processing and utilities
+scipy>=1.10.0
+scikit-learn>=1.3.0
+pandas>=2.0.0
+
+# Progress bars and logging
+tqdm>=4.65.0
+
+# Optional: For advanced visualization
+plotly>=5.15.0
+k3d>=2.16.0
+
+# Development and testing (optional)
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
 
