@@ -27,6 +27,8 @@ def chamfer_distance(
     reduction: str = 'mean',
     chunk: int = 1024,
     squared: bool = True,
+    normalize_loss: bool = False,
+    scale_eps: float = 1e-6,
 ) -> torch.Tensor:
     """
     计算 Chamfer Distance (CD) between two point clouds，带分块避免内存占用过大。
@@ -41,6 +43,21 @@ def chamfer_distance(
     min1 = _min_dists_chunked(pcd1, pcd2, chunk=chunk, squared=squared)  # (B, N)
     # min over pcd1 for each point in pcd2
     min2 = _min_dists_chunked(pcd2, pcd1, chunk=chunk, squared=squared)  # (B, M)
+
+    # 可选：按每个 batch 的几何尺度对损失做归一化（保持数据真实尺寸，仅缩放损失数值）
+    if normalize_loss:
+        # 使用每个样本的包围盒对角线长度作为尺度（pcd1 与 pcd2 的平均），与坐标单位一致
+        with torch.no_grad():
+            bb1 = (pcd1.max(dim=1).values - pcd1.min(dim=1).values)  # (B,3)
+            bb2 = (pcd2.max(dim=1).values - pcd2.min(dim=1).values)  # (B,3)
+            diag1 = torch.linalg.norm(bb1, dim=-1)  # (B,)
+            diag2 = torch.linalg.norm(bb2, dim=-1)  # (B,)
+            scale = 0.5 * (diag1 + diag2)  # (B,)
+            scale = torch.clamp(scale, min=scale_eps)
+            if squared:
+                scale = scale.pow(2)
+        min1 = min1 / scale.view(-1, 1)
+        min2 = min2 / scale.view(-1, 1)
 
     if reduction == 'mean':
         loss = min1.mean() + min2.mean()
@@ -59,6 +76,8 @@ def local_chamfer_distance(
     reduction: str = 'mean',
     chunk: int = 1024,
     squared: bool = True,
+    normalize_loss: bool = False,
+    scale_eps: float = 1e-6,
 ) -> torch.Tensor:
     """
     局部 Chamfer Distance：围绕 pcd1 的局部 patch（球邻域）计算 CD，然后在所有 patch 上取均值。
@@ -108,7 +127,15 @@ def local_chamfer_distance(
                 x_patch = x[mask_x].unsqueeze(0)
                 y_patch = y[mask_y].unsqueeze(0)
                 # 局部 CD（双向）
-                loss_patch = chamfer_distance(x_patch, y_patch, reduction='mean', chunk=chunk, squared=squared)
+                loss_patch = chamfer_distance(
+                    x_patch,
+                    y_patch,
+                    reduction='mean',
+                    chunk=chunk,
+                    squared=squared,
+                    normalize_loss=normalize_loss,
+                    scale_eps=scale_eps,
+                )
                 total = total + loss_patch
                 count += 1
             elif mask_x.any() and (not mask_y.any()):
