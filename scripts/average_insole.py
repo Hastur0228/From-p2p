@@ -4,6 +4,12 @@ from pathlib import Path
 import argparse
 import numpy as np
 import trimesh
+try:
+    from sklearn.cluster import MiniBatchKMeans  # type: ignore
+    _HAS_SKLEARN = True
+except Exception:
+    MiniBatchKMeans = None  # type: ignore
+    _HAS_SKLEARN = False
 
 # 为了复用已有的采样函数（FPS 与表面采样），将 project root 加入 sys.path
 _FILE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -151,13 +157,17 @@ def _build_mesh_from_heightmap(H: np.ndarray,
     根据高度图构建规则网格三角面片：
     - 顶点排列为行优先 (y 维在前，x 维在后)
     - 每个网格单元分解为两个三角形
+    - 仅使用有效区域（H 中非 NaN 的顶点）。任何包含无效顶点的三角形都会被跳过。
     """
     gy, gx = H.shape
     xs = np.linspace(x_min, x_max, gx, dtype=np.float64)
     ys = np.linspace(y_min, y_max, gy, dtype=np.float64)
     XX, YY = np.meshgrid(xs, ys)  # 形状 (gy, gx)
 
-    vertices = np.stack([XX.reshape(-1), YY.reshape(-1), H.reshape(-1)], axis=1)
+    # 顶点：对无效高度（NaN）先填 0，但随后会通过面片筛选排除
+    H_valid_mask = ~np.isnan(H)
+    H_filled = np.nan_to_num(H, nan=0.0)
+    vertices = np.stack([XX.reshape(-1), YY.reshape(-1), H_filled.reshape(-1)], axis=1)
 
     faces = []
     for j in range(gy - 1):
@@ -168,6 +178,11 @@ def _build_mesh_from_heightmap(H: np.ndarray,
             v01 = base0 + i + 1
             v10 = base1 + i
             v11 = base1 + i + 1
+
+            # 四个格点的有效性
+            if not (H_valid_mask[j, i] and H_valid_mask[j, i + 1] and H_valid_mask[j + 1, i] and H_valid_mask[j + 1, i + 1]):
+                continue
+
             # 两个三角形（保持右手坐标顺序，Z 由高度定义）
             faces.append([v00, v01, v11])
             faces.append([v00, v11, v10])
@@ -177,9 +192,9 @@ def _build_mesh_from_heightmap(H: np.ndarray,
     return mesh
 
 
-def find_insole_files(insole_dir: Path) -> list[Path]:
+def find_np_files(root_dir: Path) -> list[Path]:
     files: list[Path] = []
-    for root, _, names in os.walk(insole_dir):
+    for root, _, names in os.walk(root_dir):
         for n in names:
             nl = n.lower()
             if nl.endswith('.npy') or nl.endswith('.npz'):
@@ -197,20 +212,96 @@ def filter_side(files: list[Path], side: str | None) -> list[Path]:
     return [f for f in files if suffix in f.name.lower()]
 
 
-def compute_average_insole(
-    insole_dir: Path,
+def compute_average_direct_points(
+    root_dir: Path,
+    side: str,
+    num_points: int,
+    seed: int | None = None,
+    max_iter: int = 200,
+    batch_size: int = 10000,
+    n_init: int = 3,
+) -> np.ndarray:
+    """
+    直接在三维空间对多个鞋垫点云取“平均模板”（不投影）：
+    - 收集所有鞋垫点云（指定侧别）并拼接
+    - 通过 MiniBatchKMeans 将全部点聚成 num_points 个簇
+    - 以簇中心作为模板点（3D）
+    注意：该方法仅由输入点云的联合支撑决定，不涉及无效区域。
+    """
+    files = filter_side(find_np_files(root_dir), side)
+    if not files:
+        raise FileNotFoundError(f"未找到点云文件: {root_dir} (side={side})")
+
+    clouds: list[np.ndarray] = []
+    for fp in files:
+        P = _load_points_from_file(fp)
+        clouds.append(P)
+    all_points = np.vstack(clouds).astype(np.float64, copy=False)
+    if all_points.shape[0] < num_points:
+        # 若总点数少于目标点数，则重复补齐以避免 KMeans 失败
+        repeat = int(np.ceil(num_points / max(1, all_points.shape[0])))
+        all_points = np.tile(all_points, (repeat, 1))
+
+    if _HAS_SKLEARN:
+        rng = None if seed is None else int(seed)
+        kmeans = MiniBatchKMeans(
+            n_clusters=int(num_points),
+            init='k-means++',
+            n_init=max(1, int(n_init)),
+            random_state=rng,
+            max_iter=max(1, int(max_iter)),
+            batch_size=max(1000, int(batch_size)),
+            verbose=False,
+        )
+        kmeans.fit(all_points)
+        centers = np.asarray(kmeans.cluster_centers_, dtype=np.float64)
+        return centers
+    # Fallback: 体素平均 + FPS 精简
+    mins = all_points.min(axis=0)
+    maxs = all_points.max(axis=0)
+    ranges = np.maximum(maxs - mins, 1e-9)
+    n_per_axis = max(1, int(round(np.cbrt(float(num_points)))))
+    voxel_size = ranges / n_per_axis
+    # 避免过小体素导致过多单元
+    voxel_size = np.maximum(voxel_size, ranges / max(1, n_per_axis))
+    idx = np.floor((all_points - mins) / voxel_size).astype(np.int64)
+    # 聚合
+    from collections import defaultdict
+    sum_map: dict[tuple[int, int, int], np.ndarray] = {}
+    cnt_map: defaultdict[tuple[int, int, int], int] = defaultdict(int)
+    for p, key in zip(all_points, map(tuple, idx)):
+        if key in sum_map:
+            sum_map[key] += p
+        else:
+            sum_map[key] = p.copy()
+        cnt_map[key] += 1
+    centers = np.vstack([sum_map[k] / max(1, cnt_map[k]) for k in sum_map.keys()])
+    # 调整到目标点数
+    M = centers.shape[0]
+    if M > num_points:
+        keep = farthest_point_sampling(centers, num_points)
+        centers = centers[keep]
+    elif M < num_points:
+        reps = int(np.ceil(num_points / max(1, M)))
+        centers = np.tile(centers, (reps, 1))[:num_points]
+    return centers
+
+
+def compute_average_heightmap(
+    root_dir: Path,
     grid_x: int,
     grid_y: int,
     min_points_per_cell: int,
     side: str | None = None,
+    min_coverage_count: int = 1,
 ):
     """
     从多个鞋垫点云生成平均高度图与对应三角网格。
     返回 (mesh, H_avg, (x_min,x_max,y_min,y_max))。
     """
-    files = filter_side(find_insole_files(insole_dir), side)
+    files = filter_side(find_np_files(root_dir), side)
     if not files:
-        raise FileNotFoundError(f"未找到点云文件: {insole_dir} (side={side})")
+        raise FileNotFoundError(f"未找到点云文件: {root_dir} (side={side})")
 
     # 统计全局 XY 范围（点云已在项目流程中做过归一化/对齐，这里仍按数据实际范围计算）
     x_min = np.inf
@@ -233,22 +324,20 @@ def compute_average_insole(
     if y_max - y_min < 1e-6:
         y_min, y_max = -1.0, 1.0
 
-    # 对每个鞋垫生成高度图，再做逐点平均（忽略 NaN）
+    # 对每个鞋垫生成高度图，再做逐点平均（严格忽略无效区域，不进行邻域填充）
     H_sum = np.zeros((grid_y, grid_x), dtype=np.float64)
     H_cnt = np.zeros((grid_y, grid_x), dtype=np.int64)
 
     for P in clouds:
         H = _rasterize_heightmap(P, grid_x, grid_y, x_min, x_max, y_min, y_max, min_points_per_cell)
-        H = _fill_nan_by_neighbor_mean(H, max_iters=64)
         valid = ~np.isnan(H)
         H_sum[valid] += H[valid]
         H_cnt[valid] += 1
 
-    # 求平均高度图
-    H_avg = np.zeros_like(H_sum)
-    nonzero = H_cnt > 0
-    H_avg[nonzero] = H_sum[nonzero] / np.maximum(1, H_cnt[nonzero])
-    # 若某处从未被任何鞋垫覆盖，则高度保持为 0
+    # 求平均高度图（仅在覆盖次数达到阈值处求平均，其他位置保持 NaN 表示无效区域）
+    H_avg = np.full_like(H_sum, np.nan, dtype=np.float64)
+    enough = H_cnt >= int(max(1, min_coverage_count))
+    H_avg[enough] = H_sum[enough] / np.maximum(1, H_cnt[enough])
 
     # 构建平均网格
     mesh = _build_mesh_from_heightmap(H_avg, x_min, x_max, y_min, y_max)
@@ -261,7 +350,8 @@ def save_outputs(mesh: trimesh.Trimesh,
                  output_dir: Path,
                  sampled_points: int,
                  candidate_multiplier: int = 8,
-                 side: str | None = None):
+                 side: str | None = None,
+                 category_label: str = 'insole'):
     """
     保存 STL、高度图，以及从平均网格采样得到的模板点云（含法向量）。
     """
@@ -275,16 +365,16 @@ def save_outputs(mesh: trimesh.Trimesh,
             suffix = f'_{s}'
 
     # 1) 保存 STL
-    stl_path = output_dir / f'average_insole_mesh{suffix}.stl'
+    stl_path = output_dir / f'average_{category_label}_mesh{suffix}.stl'
     mesh.export(stl_path)
 
     # 2) 采样模板点云（均匀）
     pts, nors = sample_points_on_mesh(mesh, desired_points=sampled_points, candidate_multiplier=candidate_multiplier)
-    template_path = output_dir / f'average_insole_template{suffix}.npz'
+    template_path = output_dir / f'average_{category_label}_template{suffix}.npz'
     np.savez_compressed(template_path, points=pts.astype(np.float32), normals=nors.astype(np.float32))
 
     # 3) 备份保存高度图及网格 bounds，便于后续复用或可视化
-    hm_path = output_dir / f'average_insole_heightmap{suffix}.npz'
+    hm_path = output_dir / f'average_{category_label}_heightmap{suffix}.npz'
     x_min, x_max, y_min, y_max = bounds
     np.savez_compressed(hm_path,
                         height=H.astype(np.float32),
@@ -300,15 +390,26 @@ def save_outputs(mesh: trimesh.Trimesh,
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description='从多个鞋垫点云生成平均鞋垫网格，并从中采样模板点云保存到 Templates。'
+        description='从多个点云生成平均模板（支持 insoles 或 feet），并导出模板/高度图。'
     )
-    parser.add_argument('--insoles-dir', type=str, default=str(Path('data') / 'pointcloud' / 'insoles'),
-                        help='鞋垫点云目录（支持 .npy/.npz）。默认: data/pointcloud/insoles')
-    parser.add_argument('--grid-x', type=int, default=256, help='高度图 X 方向分辨率（列数），默认 256')
-    parser.add_argument('--grid-y', type=int, default=128, help='高度图 Y 方向分辨率（行数），默认 128')
-    parser.add_argument('--min-per-cell', type=int, default=1, help='每格最少点数阈值（不足则视为缺失），默认 1')
-    parser.add_argument('--sampled-points', type=int, default=4096, help='从平均网格采样的点数，默认 4096')
-    parser.add_argument('--candidate-multiplier', type=int, default=8, help='表面候选采样倍数（用于 FPS 前的候选点集），默认 8')
+    parser.add_argument('--category', type=str, choices=['insoles', 'feet'], default=None,
+                        help='平均的类别：insoles 或 feet；若不提供，将进入交互选择')
+    parser.add_argument('--root-dir', type=str, default=str(Path('data') / 'pointcloud'),
+                        help='点云根目录，脚本会在其中寻找对应类别子目录（insoles/feet）')
+    parser.add_argument('--method', type=str, choices=['direct', 'heightmap'], default='direct',
+                        help='模板生成方法：direct=点云直接聚类平均（不投影），heightmap=投影到高度图后建网格。默认 direct')
+    # direct 方法参数
+    parser.add_argument('--sampled-points', type=int, default=4096, help='direct: 期望模板点数（聚类簇数），默认 4096')
+    parser.add_argument('--seed', type=int, default=None, help='direct: 随机种子')
+    parser.add_argument('--kmeans-max-iter', type=int, default=200, help='direct: KMeans 最大迭代次数，默认 200')
+    parser.add_argument('--kmeans-batch-size', type=int, default=10000, help='direct: MiniBatchKMeans 批大小，默认 10000')
+    parser.add_argument('--kmeans-n-init', type=int, default=3, help='direct: 不同初始的尝试次数，默认 3')
+    # heightmap 方法参数（仅在选择 heightmap 时生效）
+    parser.add_argument('--grid-x', type=int, default=256, help='heightmap: X 方向分辨率（列数），默认 256')
+    parser.add_argument('--grid-y', type=int, default=128, help='heightmap: Y 方向分辨率（行数），默认 128')
+    parser.add_argument('--min-per-cell', type=int, default=1, help='heightmap: 每格最少点数阈值（不足则视为缺失），默认 1')
+    parser.add_argument('--min-coverage-count', type=int, default=1, help='heightmap: 一个网格位置至少被多少个鞋垫覆盖才算有效，默认 1')
+    parser.add_argument('--candidate-multiplier', type=int, default=8, help='heightmap: 表面候选采样倍数（用于 FPS 前的候选点集），默认 8')
     parser.add_argument('--output-dir', type=str, default=str(Path('Templates')),
                         help='输出目录（将写出 STL、模板点云和高度图），默认 Templates')
     parser.add_argument('--side', type=str, choices=['L', 'R', 'LR', 'l', 'r', 'lr'], default='LR',
@@ -316,40 +417,74 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
+def _interactive_choose_category(default: str = 'insoles') -> str:
+    print('请选择平均类别:')
+    print('  [1] insoles (默认)')
+    print('  [2] feet')
+    choice = input('选择 1 或 2: ').strip()
+    if choice == '2':
+        return 'feet'
+    return default
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
-    insole_dir = Path(args.insoles_dir)
-    output_dir = Path(args.output_dir)
+    category = args.category or _interactive_choose_category()
+    if category not in ('insoles', 'feet'):
+        raise SystemExit('无效类别，必须为 insoles 或 feet')
+
+    root_dir = Path(args.root_dir)
+    data_dir = root_dir / category
+    output_dir = Path(args.output_dir) / category
 
     side_arg = (args.side or '').upper()
     sides_to_run = ['L', 'R'] if side_arg == 'LR' else [side_arg] if side_arg in ('L', 'R') else []
     if not sides_to_run:
-        raise SystemExit("--side 必须是 L/R/LR")
+        raise SystemExit('--side 必须是 L/R/LR')
 
     for s in sides_to_run:
-        print(f"开始生成侧别: {s}")
-        mesh, H_avg, bounds = compute_average_insole(
-            insole_dir=insole_dir,
-            grid_x=args.grid_x,
-            grid_y=args.grid_y,
-            min_points_per_cell=args.min_per_cell,
-            side=s,
-        )
+        print(f"开始生成 {category}，侧别: {s}")
+        if args.method == 'direct':
+            pts = compute_average_direct_points(
+                root_dir=data_dir,
+                side=s,
+                num_points=args.sampled_points,
+                seed=args.seed,
+                max_iter=args.kmeans_max_iter,
+                batch_size=args.kmeans_batch_size,
+                n_init=args.kmeans_n_init,
+            )
+            suffix = f"_{s}"
+            template_path = output_dir / f'average_{category}_template{suffix}.npz'
+            output_dir.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(template_path, points=pts.astype(np.float32))
+            print(f"{category} {s} 侧平均模板已生成:")
+            print(f"  模板点云: {template_path}")
+        else:
+            mesh, H_avg, bounds = compute_average_heightmap(
+                root_dir=data_dir,
+                grid_x=args.grid_x,
+                grid_y=args.grid_y,
+                min_points_per_cell=args.min_per_cell,
+                side=s,
+                min_coverage_count=args.min_coverage_count,
+            )
 
-        paths = save_outputs(
-            mesh=mesh,
-            H=H_avg,
-            bounds=bounds,
-            output_dir=output_dir,
-            sampled_points=args.sampled_points,
-            candidate_multiplier=args.candidate_multiplier,
-            side=s,
-        )
+            paths = save_outputs(
+                mesh=mesh,
+                H=H_avg,
+                bounds=bounds,
+                output_dir=output_dir,
+                sampled_points=args.sampled_points,
+                candidate_multiplier=args.candidate_multiplier,
+                side=s,
+                category_label=category[:-1] if category.endswith('s') else category,
+            )
 
-        print(f"{s} 侧平均鞋垫已生成:")
-        print(f"  STL: {paths['stl']}")
-        print(f"  模板点云: {paths['template']}")
-        print(f"  高度图: {paths['heightmap']}")
+            print(f"{category} {s} 侧平均模板已生成:")
+            print(f"  STL: {paths['stl']}")
+            print(f"  模板点云: {paths['template']}")
+            print(f"  高度图: {paths['heightmap']}")
     return 0
 
 

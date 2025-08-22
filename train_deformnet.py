@@ -54,7 +54,7 @@ def _format_bytes(num_bytes: int) -> str:
 def parse_args(argv=None):
 	parser = argparse.ArgumentParser(description='训练 Deformation Network（足模 -> 鞋垫）')
 	parser.add_argument('--data-root', type=str, default=str(Path('data') / 'pointcloud'), help='数据根目录')
-	parser.add_argument('--template', type=str, default=str(Path('Templates') / 'average_insole_template.npz'), help='模板鞋垫点云路径(.npz)。当 --side=LR 时，若未显式提供左右模板，将尝试自动使用 *_L.npz 与 *_R.npz')
+	parser.add_argument('--template', type=str, default=str(Path('Templates') / 'insoles' / 'average_insoles_template.npz'), help='模板鞋垫点云路径(.npz)。当 --side=LR 时，若未显式提供左右模板，将尝试自动使用 *_L.npz 与 *_R.npz')
 	parser.add_argument('--template-L', type=str, default=None, help='左脚模板路径(.npz)，仅在 --side=LR 时使用')
 	parser.add_argument('--template-R', type=str, default=None, help='右脚模板路径(.npz)，仅在 --side=LR 时使用')
 	parser.add_argument('--no-interactive', action='store_true', help='关闭交互式确认，直接按参数启动训练')
@@ -97,6 +97,8 @@ def parse_args(argv=None):
 	parser.add_argument('--local-cd-weight', type=float, default=0.1, help='局部 Chamfer Distance 的损失权重 (0 关闭)')
 	parser.add_argument('--local-cd-patches', type=int, default=64, help='每样本局部 patch 数量')
 	parser.add_argument('--local-cd-radius', type=float, default=0.2, help='局部邻域半径（与坐标同单位）')
+	parser.add_argument('--local-cd-radius-auto', action='store_true', help='自动：用训练集平均最近邻距离×factor 作为局部CD半径')
+	parser.add_argument('--local-cd-radius-factor', type=float, default=4.0, help='自适应半径的放大因子，建议 3~5')
 	parser.add_argument('--emd-weight', type=float, default=0.5, help='EMD（Sinkhorn 近似）的损失权重 (β)')
 	parser.add_argument('--emd-eps', type=float, default=0.02, help='EMD 的 Sinkhorn 熵正则强度 epsilon')
 	parser.add_argument('--emd-iters', type=int, default=50, help='EMD 的 Sinkhorn 迭代次数')
@@ -202,6 +204,65 @@ def build_model(args):
 	)
 	regressor = DeformationNet(global_feat_dim=args.dgcnn_feat_dim, hidden_dims=_parse_hidden_dims(args.hidden_dims), dropout_p=getattr(args, 'mlp_dropout', 0.2))
 	return encoder, regressor
+
+
+def _compute_dataset_mean_nn_distance(dataset: FootInsoleDataset, max_points: int | None = None, sample_every: int = 1) -> float:
+	"""
+	计算训练集（标签鞋垫点云）在归一化坐标下的平均最近邻距离。
+	- max_points: 每个样本最多取多少点进行估计（None 表示使用该样本全部点）
+	- sample_every: 每隔多少个样本取一次（1 表示每个样本都参与）
+	"""
+	try:
+		from sklearn.neighbors import NearestNeighbors  # type: ignore
+	except Exception:
+		NearestNeighbors = None
+
+	import numpy as _np
+
+	if not hasattr(dataset, '_cache') or len(dataset._cache) == 0:
+		return 0.2  # 兜底
+
+	global_sum = 0.0
+	global_cnt = 0
+
+	for idx, item in enumerate(dataset._cache):
+		if sample_every > 1 and (idx % sample_every != 0):
+			continue
+		pts = _np.asarray(item['insole'], dtype=_np.float32)[:, :3]
+		if pts.shape[0] < 2:
+			continue
+		if max_points is not None and pts.shape[0] > int(max_points):
+			sel = _np.random.choice(pts.shape[0], int(max_points), replace=False)
+			pts = pts[sel]
+		# 使用 sklearn KDTree/Faiss (若不可用则退化为简单分块)
+		if NearestNeighbors is not None:
+			nn = NearestNeighbors(n_neighbors=2, algorithm='auto')
+			nn.fit(pts)
+			distances, _ = nn.kneighbors(pts, return_distance=True)
+			# distances[:, 0] 是自身到自身的 0，取最近非自身邻居
+			vals = distances[:, 1]
+			global_sum += float(vals.sum())
+			global_cnt += int(vals.shape[0])
+		else:
+			# 退化方案：分块计算欧氏距离，取最小非零
+			# 注意开销较大，仅用于极端情况下的兜底
+			chunk = 2048
+			mins = _np.full((pts.shape[0],), _np.inf, dtype=_np.float32)
+			for s in range(0, pts.shape[0], chunk):
+				e = min(pts.shape[0], s + chunk)
+				a = pts[s:e]
+				# (C, N)
+				d2 = _np.sum((a[:, None, :] - pts[None, :, :]) ** 2, axis=-1)
+				# 排除自身零距离
+				d2[d2 < 1e-12] = _np.inf
+				m = _np.sqrt(_np.min(d2, axis=1))
+				mins[s:e] = m
+			global_sum += float(mins.sum())
+			global_cnt += int(mins.shape[0])
+
+	if global_cnt == 0:
+		return 0.2
+	return float(global_sum / global_cnt)
 
 
 def evaluate(encoder, regressor, loader, device, cd_chunk: int, local_cd_cfg: dict[str, float | int] | None = None, cd_normalize: bool = False, emd_cfg: dict | None = None, weights: dict | None = None):
@@ -315,6 +376,8 @@ def _interactive_edit(args):
 			("局部CD 权重", args.local_cd_weight, float),
 			("局部CD patch 数", args.local_cd_patches, int),
 			("局部CD 半径", args.local_cd_radius, float),
+			("局部CD 自适应半径(开启y/关闭n)", args.local_cd_radius_auto, lambda x: x.lower() in ('y','yes','true','1')),
+			("局部CD 自适应factor", args.local_cd_radius_factor, float),
 			("EMD 权重β", args.emd_weight, float),
 			("EMD eps", args.emd_eps, float),
 			("EMD iters", args.emd_iters, int),
@@ -365,6 +428,8 @@ def _interactive_edit(args):
 			elif label == "局部CD 权重": args.local_cd_weight = new_value
 			elif label == "局部CD patch 数": args.local_cd_patches = new_value
 			elif label == "局部CD 半径": args.local_cd_radius = new_value
+			elif label == "局部CD 自适应半径(开启y/关闭n)": args.local_cd_radius_auto = bool(new_value)
+			elif label == "局部CD 自适应factor": args.local_cd_radius_factor = new_value
 			elif label == "EMD 权重β": args.emd_weight = new_value
 			elif label == "EMD eps": args.emd_eps = new_value
 			elif label == "EMD iters": args.emd_iters = new_value
@@ -414,6 +479,18 @@ def train():
 
 		# Data
 		train_loader, val_loader = make_dataloaders(args, side=side_run, template_path=template_path)
+
+		# 自适应计算局部CD半径（基于训练集标签点云的平均最近邻距离）
+		if args.local_cd_weight > 0 and getattr(args, 'local_cd_radius_auto', False):
+			train_set = train_loader.dataset  # type: ignore
+			try:
+				max_pts = int(getattr(args, 'num_points', 4096))
+				d_mean = _compute_dataset_mean_nn_distance(train_set, max_points=max_pts, sample_every=1)
+				radius = float(getattr(args, 'local_cd_radius_factor', 4.0)) * float(d_mean)
+				args.local_cd_radius = radius
+				logger.info(f"LCD 自适应半径: factor={args.local_cd_radius_factor} × d_mean={d_mean:.6f} -> radius={args.local_cd_radius:.6f}")
+			except Exception as e:
+				logger.warning(f"LCD 自适应半径计算失败，回退到固定半径 {args.local_cd_radius}: {e}")
 		logger.info(f"数据集: 训练批次={len(train_loader)} | 验证批次={len(val_loader)} | 每批={args.batch_size}")
 
 		# Model
@@ -542,6 +619,9 @@ def train():
 			hist_train_loss.append(train_loss)
 			hist_val_loss.append(val_loss)
 
+			# 每个 epoch 均输出一次训练/验证损失
+			logger.info(f"[{side_run}] Ep{epoch:03d} 训练/验证: {train_loss:.6f}/{val_loss:.6f}")
+
 			# 调度器
 			if scheduler is not None and (not args.warmup_epochs or epoch > args.warmup_epochs):
 				if isinstance(scheduler, ReduceLROnPlateau):
@@ -567,7 +647,7 @@ def train():
 				logger.info(f"[{side_run}] 保存最佳模型 (val={best_val:.6f}) -> {sub_save / 'best.pth'}")
 			else:
 				patience_counter += 1
-				logger.info(f"[{side_run}] Ep{epoch:03d} 训练/验证: {train_loss:.6f}/{val_loss:.6f} | 耗时: {time.time()-start_t:.1f}s | 耐心: {patience_counter}/{args.patience}")
+				logger.info(f"[{side_run}] Ep{epoch:03d} | 耗时: {time.time()-start_t:.1f}s | 耐心: {patience_counter}/{args.patience}")
 
 			if args.early_stopping and patience_counter >= args.patience:
 				logger.info(f"[{side_run}] 提前停止触发！最佳验证损失: {best_val:.6f} (第 {best_val_epoch} 轮)")
@@ -664,7 +744,7 @@ def set_seed(seed: int = 42):
 def parse_args(argv=None):
 	parser = argparse.ArgumentParser(description='训练 Deformation Network（足模 -> 鞋垫）')
 	parser.add_argument('--data-root', type=str, default=str(Path('data') / 'pointcloud'), help='数据根目录')
-	parser.add_argument('--template', type=str, default=str(Path('Templates') / 'average_insole_template.npz'), help='模板鞋垫点云路径(.npz)。当 --side=LR 时，若未显式提供左右模板，将尝试自动使用 *_L.npz 与 *_R.npz')
+	parser.add_argument('--template', type=str, default=str(Path('Templates') / 'average_insoles_template.npz'), help='模板鞋垫点云路径(.npz)。当 --side=LR 时，若未显式提供左右模板，将尝试自动使用 *_L.npz 与 *_R.npz')
 	parser.add_argument('--template-L', type=str, default=None, help='左脚模板路径(.npz)，仅在 --side=LR 时使用')
 	parser.add_argument('--template-R', type=str, default=None, help='右脚模板路径(.npz)，仅在 --side=LR 时使用')
 	parser.add_argument('--no-interactive', action='store_true', help='关闭交互式确认，直接按参数启动训练')

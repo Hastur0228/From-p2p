@@ -1,53 +1,55 @@
-2025-08-19 12:53:24,785 | INFO | Input STL: D:\Cursor Repos\From p2p\data\raw\feet\003_foot_L.stl
-2025-08-19 12:53:24,785 | INFO | Output log: D:\Cursor Repos\From p2p\Log\preprocess\feet\003_foot_L.log
-2025-08-19 12:53:24,786 | INFO | Parameters: num_points=4096, candidate_multiplier=4, z_low_percent=None, z_high_percent=None, seed=None
-2025-08-19 12:53:24,786 | INFO | File: size_bytes=1498484, mtime=2025-08-07 13:33:30
-2025-08-19 12:53:24,786 | INFO | Env: python=3.11.13, numpy=2.1.2, trimesh=4.7.4, platform=Windows-10-10.0.26100-SP0
-2025-08-19 12:53:24,840 | INFO | Mesh: vertices=15471, faces=29968
-2025-08-19 12:53:24,856 | WARNING | Mesh is not watertight; surface sampling may include boundary artifacts
-2025-08-19 12:53:24,860 | INFO | Mesh surface area: 10712.571344
-2025-08-19 12:53:24,872 | INFO | Mesh volume: 52352.981224
-2025-08-19 12:53:24,874 | INFO | Mesh AABB min=[-34.41070556640625, 0.0, -81.2248764038086] max=[33.69845962524414, 161.34292602539062, 0.0]
-2025-08-19 12:53:24,874 | INFO | Boundary edges: 0
-2025-08-19 12:53:24,874 | INFO | Load mesh time: 88.3 ms
-2025-08-19 12:53:24,874 | INFO | Surface sampling: candidates=16384 (target=4096, multiplier=4)
-2025-08-19 12:53:24,887 | INFO | Running Farthest Point Sampling (FPS) to enforce even spacing
-2025-08-19 12:53:24,972 | INFO | FPS progress: 409/4096
-2025-08-19 12:53:25,055 | INFO | FPS progress: 818/4096
-2025-08-19 12:53:25,138 | INFO | FPS progress: 1227/4096
-2025-08-19 12:53:25,220 | INFO | FPS progress: 1636/4096
-2025-08-19 12:53:25,303 | INFO | FPS progress: 2045/4096
-2025-08-19 12:53:25,387 | INFO | FPS progress: 2454/4096
-2025-08-19 12:53:25,474 | INFO | FPS progress: 2863/4096
-2025-08-19 12:53:25,558 | INFO | FPS progress: 3272/4096
-2025-08-19 12:53:25,641 | INFO | FPS progress: 3681/4096
-2025-08-19 12:53:25,729 | INFO | FPS progress: 4090/4096
-2025-08-19 12:53:25,730 | INFO | Round 1: accumulated=4096, kept=4096 (100.00%), time=856.1 ms
-2025-08-19 12:53:25,730 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
-2025-08-19 12:53:25,730 | INFO | Sampled points: (4096, 3), normals: (4096, 3)
-2025-08-19 12:53:25,730 | INFO | Sampling time: 856.7 ms
-2025-08-19 12:53:25,730 | INFO | Centering only: centroid=[-2.1874416041550218, 83.85714387535583, -4.864956930161292] | scale fixed to 1.000000 (no scaling)
-2025-08-19 12:53:25,730 | INFO | Axis x stats (centered): min=-32.105764, mean=-0.000000, std=17.244592, max=35.644147
-2025-08-19 12:53:25,730 | INFO | Axis y stats (centered): min=-83.682552, mean=0.000000, std=46.666451, max=76.995750
-2025-08-19 12:53:25,732 | INFO | Axis z stats (centered): min=-76.138337, mean=0.000000, std=13.131881, max=4.859273
-2025-08-19 12:53:25,732 | INFO | Centering time: 0.5 ms
-2025-08-19 12:53:25,732 | INFO | PCA alignment: explained variance ratio=0.8302, 0.1157, 0.0541
-2025-08-19 12:53:25,732 | INFO | Rotation matrix (columns are principal axes):
-[[-0.00311   0.972112 -0.234495]
- [-0.995044 -0.026314 -0.095888]
- [-0.099384  0.233034  0.967377]]
-2025-08-19 12:53:25,732 | INFO | Rotation matrix det=1.000000
-2025-08-19 12:53:25,732 | INFO | Orientation enforcement: mean_nz=0.796607 -> sz=1, width_low=53.860600, width_high=56.330517 -> sx=1, sy=1
-2025-08-19 12:53:25,733 | INFO | Orientation signs diag(S)=[1.0, 1.0, 1.0]
-2025-08-19 12:53:25,733 | INFO | PCA time: 1.5 ms
-2025-08-19 12:53:25,733 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
-2025-08-19 12:53:25,733 | INFO | Final points: (4096, 3), normals: (4096, 3)
-2025-08-19 12:53:25,734 | INFO | Aligned normalized AABB min=[-76.53697144523879, -34.1287953907855, -64.74369357710695] max=[90.08727510134536, 34.266609643584346, 13.060588097595437]
-2025-08-19 12:53:25,734 | INFO | Final radii percentiles: p5=13.708926, p50=44.905515, p95=81.096718; centroid_norm=0.000000
-2025-08-19 12:53:25,734 | INFO | Axis x stats (final): min=-76.536971, mean=-0.000000, std=46.882396, max=90.087275
-2025-08-19 12:53:25,734 | INFO | Axis y stats (final): min=-34.128795, mean=-0.000000, std=17.502055, max=34.266610
-2025-08-19 12:53:25,734 | INFO | Axis z stats (final): min=-64.743694, mean=-0.000000, std=11.970752, max=13.060588
-2025-08-19 12:53:25,734 | INFO | Normal lengths: min=1.000000, mean=1.000000, max=1.000000
-2025-08-19 12:53:25,734 | INFO | Final FPS time: 1.7 ms
-2025-08-19 12:53:25,744 | INFO | Saved bundle (npz): D:\Cursor Repos\From p2p\data\pointcloud\feet\003_foot_L.npz | points=(4096, 3) normals=(4096, 3)
-2025-08-19 12:53:25,744 | INFO | Completed successfully.
+2025-08-22 11:30:35,799 | INFO | Input STL: D:\Cursor Repos\From p2p\data\raw\feet\003_foot_L.stl
+2025-08-22 11:30:35,800 | INFO | Output log: D:\Cursor Repos\From p2p\Log\preprocess\feet\003_foot_L.log
+2025-08-22 11:30:35,800 | INFO | Parameters: num_points=4096, candidate_multiplier=4, z_low_percent=None, z_high_percent=None, seed=None
+2025-08-22 11:30:35,800 | INFO | File: size_bytes=1498484, mtime=2025-08-07 13:33:30
+2025-08-22 11:30:35,801 | INFO | Env: python=3.11.13, numpy=2.3.2, trimesh=4.7.4, platform=Windows-10-10.0.26100-SP0
+2025-08-22 11:30:35,855 | INFO | Mesh: vertices=15471, faces=29968
+2025-08-22 11:30:35,873 | WARNING | Mesh is not watertight; surface sampling may include boundary artifacts
+2025-08-22 11:30:35,878 | INFO | Mesh surface area: 10712.571344
+2025-08-22 11:30:35,888 | INFO | Mesh volume: 52352.981224
+2025-08-22 11:30:35,891 | INFO | Mesh AABB min=[-34.41070556640625, 0.0, -81.2248764038086] max=[33.69845962524414, 161.34292602539062, 0.0]
+2025-08-22 11:30:35,891 | INFO | Boundary edges: 0
+2025-08-22 11:30:35,891 | INFO | Load mesh time: 90.7 ms
+2025-08-22 11:30:35,967 | INFO | Connected-component cleanup: kept=1, removed=1, kept_area=10367.522413, removed_area=345.065369, removed/kept=0.033283
+2025-08-22 11:30:35,967 | INFO | Feet cleanup: kept_area=10367.522413, removed_area=345.065369, components_removed=1
+2025-08-22 11:30:35,967 | INFO | Surface sampling: candidates=16384 (target=4096, multiplier=4)
+2025-08-22 11:30:35,977 | INFO | Running Farthest Point Sampling (FPS) to enforce even spacing
+2025-08-22 11:30:36,054 | INFO | FPS progress: 409/4096
+2025-08-22 11:30:36,137 | INFO | FPS progress: 818/4096
+2025-08-22 11:30:36,215 | INFO | FPS progress: 1227/4096
+2025-08-22 11:30:36,290 | INFO | FPS progress: 1636/4096
+2025-08-22 11:30:36,365 | INFO | FPS progress: 2045/4096
+2025-08-22 11:30:36,442 | INFO | FPS progress: 2454/4096
+2025-08-22 11:30:36,520 | INFO | FPS progress: 2863/4096
+2025-08-22 11:30:36,602 | INFO | FPS progress: 3272/4096
+2025-08-22 11:30:36,683 | INFO | FPS progress: 3681/4096
+2025-08-22 11:30:36,758 | INFO | FPS progress: 4090/4096
+2025-08-22 11:30:36,759 | INFO | Round 1: accumulated=4096, kept=4096 (100.00%), time=792.9 ms
+2025-08-22 11:30:36,759 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
+2025-08-22 11:30:36,759 | INFO | Sampled points: (4096, 3), normals: (4096, 3)
+2025-08-22 11:30:36,759 | INFO | Sampling time: 793.2 ms
+2025-08-22 11:30:36,759 | INFO | Centering only: centroid=[-1.6858879945189131, 86.27292208885815, -2.4251455063862557] | scale fixed to 1.000000 (no scaling)
+2025-08-22 11:30:36,759 | INFO | Axis x stats (centered): min=-32.624597, mean=0.000000, std=17.390844, max=35.276828
+2025-08-22 11:30:36,760 | INFO | Axis y stats (centered): min=-86.060344, mean=0.000000, std=45.165996, max=74.737607
+2025-08-22 11:30:36,760 | INFO | Axis z stats (centered): min=-12.157835, mean=0.000000, std=2.861904, max=2.408044
+2025-08-22 11:30:36,760 | INFO | Centering time: 0.4 ms
+2025-08-22 11:30:36,760 | INFO | PCA alignment: explained variance ratio=0.8682, 0.1287, 0.0032
+2025-08-22 11:30:36,760 | INFO | Rotation matrix (columns are principal axes):
+[[-0.019906  0.998695  0.047032]
+ [ 0.999791  0.01966   0.005684]
+ [ 0.004752  0.047135 -0.998877]]
+2025-08-22 11:30:36,760 | INFO | Rotation matrix det=1.000000
+2025-08-22 11:30:36,762 | INFO | Orientation enforcement (concave-to-pos-z (corr_pos=0.2879, corr_neg=-0.2879)): sz=1, width_low=42.118575, width_high=54.830632 -> sx=1, sy=1
+2025-08-22 11:30:36,763 | INFO | Orientation signs diag(S)=[1.0, 1.0, 1.0]
+2025-08-22 11:30:36,763 | INFO | PCA time: 2.8 ms
+2025-08-22 11:30:36,763 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
+2025-08-22 11:30:36,763 | INFO | Final points: (4096, 3), normals: (4096, 3)
+2025-08-22 11:30:36,763 | INFO | Aligned normalized AABB min=[-86.19435125533394, -31.75302012683281, -2.6219075273096997] max=[75.18140918654667, 35.61813234704515, 10.691887617515063]
+2025-08-22 11:30:36,764 | INFO | Final radii percentiles: p5=13.078853, p50=43.430319, p95=77.000662; centroid_norm=0.000000
+2025-08-22 11:30:36,764 | INFO | Axis x stats (final): min=-86.194351, mean=0.000000, std=45.174161, max=75.181409
+2025-08-22 11:30:36,764 | INFO | Axis y stats (final): min=-31.753020, mean=0.000000, std=17.389795, max=35.618132
+2025-08-22 11:30:36,764 | INFO | Axis z stats (final): min=-2.621908, mean=-0.000000, std=2.736673, max=10.691888
+2025-08-22 11:30:36,764 | INFO | Normal lengths: min=1.000000, mean=1.000000, max=1.000000
+2025-08-22 11:30:36,764 | INFO | Final FPS time: 1.3 ms
+2025-08-22 11:30:36,774 | INFO | Saved bundle (npz): D:\Cursor Repos\From p2p\data\pointcloud\feet\003_foot_L.npz | points=(4096, 3) normals=(4096, 3)
+2025-08-22 11:30:36,774 | INFO | Completed successfully.

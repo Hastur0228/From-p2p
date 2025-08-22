@@ -1,0 +1,103 @@
+2025-08-21 15:36:35,172 | INFO | 日志文件: output\logs\pointcloud_to_stl.log
+2025-08-21 15:36:35,175 | INFO | Found 20 input files
+2025-08-21 15:36:35,176 | INFO | [1/20] 017_insole_L.npz
+2025-08-21 15:36:35,178 | INFO | Auto heel-threshold: -20.231030 (ratio=0.25)
+2025-08-21 15:36:35,235 | INFO | Heel densify: orig=4096 heel=1014 added=2028 factor=3 method=interp sigma=0.302566
+2025-08-21 15:36:35,293 | INFO | Auto-estimated alpha=5.108573 (k=10, scale=2.5)
+2025-08-21 15:36:35,462 | INFO | OK: 017_insole_L.npz -> output\stl\017_insole_L.stl
+2025-08-21 15:36:35,467 | INFO | [2/20] 017_insole_R.npz
+2025-08-21 15:36:35,469 | INFO | Auto heel-threshold: -25.349849 (ratio=0.25)
+2025-08-21 15:36:35,514 | INFO | Heel densify: orig=4096 heel=663 added=1326 factor=3 method=interp sigma=0.298618
+2025-08-21 15:36:35,564 | INFO | Auto-estimated alpha=6.578860 (k=10, scale=2.5)
+2025-08-21 15:36:35,696 | INFO | OK: 017_insole_R.npz -> output\stl\017_insole_R.stl
+2025-08-21 15:36:35,700 | INFO | [3/20] 018_insole_L.npz
+2025-08-21 15:36:35,701 | INFO | Auto heel-threshold: -22.227893 (ratio=0.25)
+2025-08-21 15:36:35,752 | INFO | Heel densify: orig=4096 heel=916 added=1832 factor=3 method=interp sigma=0.317636
+2025-08-21 15:36:35,804 | INFO | Auto-estimated alpha=5.986945 (k=10, scale=2.5)
+2025-08-21 15:36:35,957 | INFO | OK: 018_insole_L.npz -> output\stl\018_insole_L.stl
+2025-08-21 15:36:35,961 | INFO | [4/20] 018_insole_R.npz
+2025-08-21 15:36:35,963 | INFO | Auto heel-threshold: -26.079206 (ratio=0.25)
+2025-08-21 15:36:35,999 | INFO | Heel densify: orig=4096 heel=655 added=1310 factor=3 method=interp sigma=0.308949
+2025-08-21 15:36:36,054 | INFO | Auto-estimated alpha=6.822934 (k=10, scale=2.5)
+2025-08-21 15:36:36,177 | INFO | OK: 018_insole_R.npz -> output\stl\018_insole_R.stl
+2025-08-21 15:36:36,181 | INFO | [5/20] 019_insole_L.npz
+2025-08-21 15:36:36,183 | INFO | Auto heel-threshold: -22.290809 (ratio=0.25)
+2025-08-21 15:36:36,227 | INFO | Heel densify: orig=4096 heel=914 added=1828 factor=3 method=interp sigma=0.317951
+2025-08-21 15:36:36,282 | INFO | Auto-estimated alpha=6.006637 (k=10, scale=2.5)
+2025-08-21 15:36:36,440 | INFO | OK: 019_insole_L.npz -> output\stl\019_insole_L.stl
+2025-08-21 15:36:36,446 | INFO | [6/20] 019_insole_R.npz
+2025-08-21 15:36:36,451 | INFO | Auto heel-threshold: -26.052336 (ratio=0.25)
+2025-08-21 15:36:36,512 | INFO | Heel densify: orig=4096 heel=655 added=1310 factor=3 method=interp sigma=0.308172
+2025-08-21 15:36:36,567 | INFO | Auto-estimated alpha=6.810820 (k=10, scale=2.5)
+2025-08-21 15:36:36,745 | INFO | OK: 019_insole_R.npz -> output\stl\019_insole_R.stl
+2025-08-21 15:36:36,750 | INFO | [7/20] 020_insole_L.npz
+2025-08-21 15:36:36,751 | INFO | Auto heel-threshold: -22.700661 (ratio=0.25)
+2025-08-21 15:36:36,805 | INFO | Heel densify: orig=4096 heel=882 added=1764 factor=3 method=interp sigma=0.320661
+2025-08-21 15:36:36,864 | INFO | Auto-estimated alpha=6.233944 (k=10, scale=2.5)
+2025-08-21 15:36:37,108 | INFO | OK: 020_insole_L.npz -> output\stl\020_insole_L.stl
+2025-08-21 15:36:37,113 | INFO | [8/20] 020_insole_R.npz
+2025-08-21 15:36:37,115 | INFO | Auto heel-threshold: -26.190985 (ratio=0.25)
+2025-08-21 15:36:37,159 | INFO | Heel densify: orig=4096 heel=651 added=1302 factor=3 method=interp sigma=0.310764
+2025-08-21 15:36:37,211 | INFO | Auto-estimated alpha=6.851198 (k=10, scale=2.5)
+2025-08-21 15:36:37,390 | INFO | OK: 020_insole_R.npz -> output\stl\020_insole_R.stl
+2025-08-21 15:36:37,394 | INFO | [9/20] 140_insole_L.npz
+2025-08-21 15:36:37,396 | INFO | Auto heel-threshold: -21.868300 (ratio=0.25)
+2025-08-21 15:36:37,451 | INFO | Heel densify: orig=4096 heel=940 added=1880 factor=3 method=interp sigma=0.313947
+2025-08-21 15:36:37,514 | INFO | Auto-estimated alpha=5.859283 (k=10, scale=2.5)
+2025-08-21 15:36:37,720 | INFO | OK: 140_insole_L.npz -> output\stl\140_insole_L.stl
+2025-08-21 15:36:37,724 | INFO | [10/20] 140_insole_R.npz
+2025-08-21 15:36:37,726 | INFO | Auto heel-threshold: -26.004174 (ratio=0.25)
+2025-08-21 15:36:37,765 | INFO | Heel densify: orig=4096 heel=655 added=1310 factor=3 method=interp sigma=0.307526
+2025-08-21 15:36:37,821 | INFO | Auto-estimated alpha=6.795685 (k=10, scale=2.5)
+2025-08-21 15:36:37,997 | INFO | OK: 140_insole_R.npz -> output\stl\140_insole_R.stl
+2025-08-21 15:36:38,000 | INFO | [11/20] 141_insole_L.npz
+2025-08-21 15:36:38,002 | INFO | Auto heel-threshold: -19.240880 (ratio=0.25)
+2025-08-21 15:36:38,070 | INFO | Heel densify: orig=4096 heel=1049 added=2098 factor=3 method=interp sigma=0.288875
+2025-08-21 15:36:38,134 | INFO | Auto-estimated alpha=4.649911 (k=10, scale=2.5)
+2025-08-21 15:36:38,352 | INFO | OK: 141_insole_L.npz -> output\stl\141_insole_L.stl
+2025-08-21 15:36:38,357 | INFO | [12/20] 141_insole_R.npz
+2025-08-21 15:36:38,359 | INFO | Auto heel-threshold: -24.789571 (ratio=0.25)
+2025-08-21 15:36:38,397 | INFO | Heel densify: orig=4096 heel=665 added=1330 factor=3 method=interp sigma=0.291536
+2025-08-21 15:36:38,447 | INFO | Auto-estimated alpha=6.389255 (k=10, scale=2.5)
+2025-08-21 15:36:38,627 | INFO | OK: 141_insole_R.npz -> output\stl\141_insole_R.stl
+2025-08-21 15:36:38,632 | INFO | [13/20] 142_insole_L.npz
+2025-08-21 15:36:38,634 | INFO | Auto heel-threshold: -20.129652 (ratio=0.25)
+2025-08-21 15:36:38,692 | INFO | Heel densify: orig=4096 heel=1020 added=2040 factor=3 method=interp sigma=0.302038
+2025-08-21 15:36:38,754 | INFO | Auto-estimated alpha=5.127779 (k=10, scale=2.5)
+2025-08-21 15:36:38,978 | INFO | OK: 142_insole_L.npz -> output\stl\142_insole_L.stl
+2025-08-21 15:36:38,984 | INFO | [14/20] 142_insole_R.npz
+2025-08-21 15:36:38,985 | INFO | Auto heel-threshold: -25.376030 (ratio=0.25)
+2025-08-21 15:36:39,022 | INFO | Heel densify: orig=4096 heel=663 added=1326 factor=3 method=interp sigma=0.298938
+2025-08-21 15:36:39,076 | INFO | Auto-estimated alpha=6.588090 (k=10, scale=2.5)
+2025-08-21 15:36:39,289 | INFO | OK: 142_insole_R.npz -> output\stl\142_insole_R.stl
+2025-08-21 15:36:39,294 | INFO | [15/20] 143_insole_L.npz
+2025-08-21 15:36:39,295 | INFO | Auto heel-threshold: -21.096578 (ratio=0.25)
+2025-08-21 15:36:39,358 | INFO | Heel densify: orig=4096 heel=973 added=1946 factor=3 method=interp sigma=0.309751
+2025-08-21 15:36:39,424 | INFO | Auto-estimated alpha=5.617417 (k=10, scale=2.5)
+2025-08-21 15:36:39,641 | INFO | OK: 143_insole_L.npz -> output\stl\143_insole_L.stl
+2025-08-21 15:36:39,646 | INFO | [16/20] 143_insole_R.npz
+2025-08-21 15:36:39,648 | INFO | Auto heel-threshold: -25.860574 (ratio=0.25)
+2025-08-21 15:36:39,690 | INFO | Heel densify: orig=4096 heel=654 added=1308 factor=3 method=interp sigma=0.304693
+2025-08-21 15:36:39,745 | INFO | Auto-estimated alpha=6.733826 (k=10, scale=2.5)
+2025-08-21 15:36:39,916 | INFO | OK: 143_insole_R.npz -> output\stl\143_insole_R.stl
+2025-08-21 15:36:39,923 | INFO | [17/20] 144_insole_L.npz
+2025-08-21 15:36:39,926 | INFO | Auto heel-threshold: -20.819991 (ratio=0.25)
+2025-08-21 15:36:39,976 | INFO | Heel densify: orig=4096 heel=984 added=1968 factor=3 method=interp sigma=0.308094
+2025-08-21 15:36:40,035 | INFO | Auto-estimated alpha=5.502726 (k=10, scale=2.5)
+2025-08-21 15:36:40,250 | INFO | OK: 144_insole_L.npz -> output\stl\144_insole_L.stl
+2025-08-21 15:36:40,255 | INFO | [18/20] 144_insole_R.npz
+2025-08-21 15:36:40,256 | INFO | Auto heel-threshold: -25.771309 (ratio=0.25)
+2025-08-21 15:36:40,301 | INFO | Heel densify: orig=4096 heel=655 added=1310 factor=3 method=interp sigma=0.303518
+2025-08-21 15:36:40,395 | INFO | Auto-estimated alpha=6.713561 (k=10, scale=2.5)
+2025-08-21 15:36:40,580 | INFO | OK: 144_insole_R.npz -> output\stl\144_insole_R.stl
+2025-08-21 15:36:40,584 | INFO | [19/20] 145_insole_L.npz
+2025-08-21 15:36:40,585 | INFO | Auto heel-threshold: -20.518579 (ratio=0.25)
+2025-08-21 15:36:40,645 | INFO | Heel densify: orig=4096 heel=998 added=1996 factor=3 method=interp sigma=0.305193
+2025-08-21 15:36:40,714 | INFO | Auto-estimated alpha=5.341202 (k=10, scale=2.5)
+2025-08-21 15:36:40,964 | INFO | OK: 145_insole_L.npz -> output\stl\145_insole_L.stl
+2025-08-21 15:36:40,968 | INFO | [20/20] 145_insole_R.npz
+2025-08-21 15:36:40,970 | INFO | Auto heel-threshold: -25.668563 (ratio=0.25)
+2025-08-21 15:36:41,022 | INFO | Heel densify: orig=4096 heel=658 added=1316 factor=3 method=interp sigma=0.301999
+2025-08-21 15:36:41,085 | INFO | Auto-estimated alpha=6.679255 (k=10, scale=2.5)
+2025-08-21 15:36:41,294 | INFO | OK: 145_insole_R.npz -> output\stl\145_insole_R.stl
+2025-08-21 15:36:41,297 | INFO | Done: 20/20 succeeded. Output dir: output\stl

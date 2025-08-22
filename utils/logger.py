@@ -9,11 +9,11 @@ from datetime import datetime
 def setup_logger(log_dir: str | Path, name: str = 'train') -> logging.Logger:
     """
     配置日志记录器：同时输出到控制台与文件，UTF-8 编码。
+    日志文件不包含时间戳，会覆盖之前的日志文件。
     """
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
-    time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_path = log_dir / f"{name}_{time_str}.log"
+    log_path = log_dir / f"{name}.log"
 
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)

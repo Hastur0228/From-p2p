@@ -240,19 +240,82 @@ def enforce_foot_orientation(
 	points_aligned: np.ndarray,
 	normals_rotated: np.ndarray,
 	logger: Optional[logging.Logger] = None,
+	flat_side_to_neg_z: bool = False,
+	concave_to_pos_z: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 	"""
 	Enforce consistent anatomical orientation after PCA alignment:
-	- Plantar in XY plane (Z up): flip Z if mean normal Z is negative
-	- Toes toward +X: compare Y-width at x-high vs x-low, flip X if needed
-	- Preserve right-handedness by choosing Y flip accordingly
+	- If flat_side_to_neg_z is True (e.g., for insoles): choose Z flip such that the flatter face
+	  tends to lie at negative Z (bottom).
+	- Otherwise: Plantar in XY plane (Z up) by flipping Z if mean normal Z is negative.
+	- Toes toward +X: compare Y-width at x-high vs x-low, flip X if needed.
+	- Preserve right-handedness by choosing Y flip accordingly.
 
 	Returns (points_oriented, normals_oriented, diag_signs)
 	where diag_signs is a 3-vector [sx, sy, sz].
 	"""
-	# Decide Z flip based on average normal direction
-	mean_nz = float(normals_rotated[:, 2].mean()) if normals_rotated.size else 0.0
-	sz = 1.0 if mean_nz >= 0.0 else -1.0
+
+	def _mean_resultant_length(n: np.ndarray) -> float:
+		if n.size == 0:
+			return 0.0
+		norm = np.linalg.norm(n, axis=1, keepdims=True) + 1e-12
+		n_unit = n / norm
+		m = n_unit.mean(axis=0)
+		return float(np.linalg.norm(m))
+
+	def _choose_sz_by_flatness(p: np.ndarray, n: np.ndarray) -> float:
+		best_sz = 1.0
+		best_score = -1.0
+		for sz_cand in (1.0, -1.0):
+			z_tmp = p[:, 2] * sz_cand
+			thr = np.quantile(z_tmp, 0.2)
+			mask = (z_tmp <= thr)
+			if not np.any(mask):
+				continue
+			if n.size:
+				n_slice = n[mask].copy()
+				n_slice[:, 2] *= sz_cand
+				score = _mean_resultant_length(n_slice)
+			else:
+				pts = p[mask]
+				pts_c = pts - pts.mean(axis=0, keepdims=True)
+				cov = np.cov(pts_c.T)
+				vals, _ = np.linalg.eigh(cov)
+				vals = np.sort(vals)[::-1]
+				score = float(vals[0] / (vals.sum() + 1e-12))
+			if score > best_score:
+				best_score = score
+				best_sz = sz_cand
+		return best_sz
+
+	# Decide Z flip
+	if flat_side_to_neg_z and concave_to_pos_z:
+		# If both requested, prioritize explicit flat-side rule
+		concave_to_pos_z = False
+	if flat_side_to_neg_z:
+		sz = _choose_sz_by_flatness(points_aligned, normals_rotated)
+		method = "flat-to-neg-z"
+		mean_nz = float('nan')
+	elif concave_to_pos_z:
+		# Choose sz so that height increases with radial distance (bowl opening upward)
+		def _corr_with_radius(p: np.ndarray, sz_cand: float) -> float:
+			z_tmp = p[:, 2] * sz_cand
+			r = np.linalg.norm(p[:, :2], axis=1)
+			z_std = z_tmp.std()
+			r_std = r.std()
+			if z_std < 1e-9 or r_std < 1e-9:
+				return -1.0
+			cov = float(((z_tmp - z_tmp.mean()) * (r - r.mean())).mean())
+			return cov / (z_std * r_std + 1e-12)
+		c_pos = _corr_with_radius(points_aligned, 1.0)
+		c_neg = _corr_with_radius(points_aligned, -1.0)
+		sz = 1.0 if c_pos >= c_neg else -1.0
+		method = f"concave-to-pos-z (corr_pos={c_pos:.4f}, corr_neg={c_neg:.4f})"
+		mean_nz = float('nan')
+	else:
+		mean_nz = float(normals_rotated[:, 2].mean()) if normals_rotated.size else 0.0
+		sz = 1.0 if mean_nz >= 0.0 else -1.0
+		method = "mean-normal"
 
 	# Apply tentative Z flip to evaluate toe/heel widths on flattened sense of up
 	points_tmp = points_aligned.copy()
@@ -268,15 +331,167 @@ def enforce_foot_orientation(
 	sy = 1.0 if (sx * sz) > 0 else -1.0
 
 	if logger:
-		logger.info(
-			f"Orientation enforcement: mean_nz={mean_nz:.6f} -> sz={int(sz)}, "
-			f"width_low={width_low:.6f}, width_high={width_high:.6f} -> sx={int(sx)}, sy={int(sy)}"
-		)
+		if flat_side_to_neg_z or concave_to_pos_z:
+			logger.info(
+				f"Orientation enforcement ({method}): sz={int(sz)}, "
+				f"width_low={width_low:.6f}, width_high={width_high:.6f} -> sx={int(sx)}, sy={int(sy)}"
+			)
+		else:
+			logger.info(
+				f"Orientation enforcement ({method}): mean_nz={mean_nz:.6f} -> sz={int(sz)}, "
+				f"width_low={width_low:.6f}, width_high={width_high:.6f} -> sx={int(sx)}, sy={int(sy)}"
+			)
 
 	S = np.array([sx, sy, sz], dtype=np.float64)
 	points_out = points_aligned * S
 	normals_out = normals_rotated * S
 	return points_out, normals_out, S
+
+
+def _skew_symmetric_matrix(v: np.ndarray) -> np.ndarray:
+	"""Return the skew-symmetric matrix for cross product with vector v (shape (3,))."""
+	K = np.array(
+		[
+			[0.0, -v[2], v[1]],
+			[v[2], 0.0, -v[0]],
+			[-v[1], v[0], 0.0],
+		],
+		dtype=np.float64,
+	)
+	return K
+
+
+def _rotation_aligning_vector_to_target(vec_from: np.ndarray, vec_to: np.ndarray) -> np.ndarray:
+	"""
+	Compute a 3x3 rotation matrix that rotates vec_from to vec_to using Rodrigues' formula.
+	Both vec_from and vec_to are 3D vectors; the function is robust to nearly parallel/antiparallel cases.
+	"""
+	a = vec_from.astype(np.float64)
+	b = vec_to.astype(np.float64)
+	a_norm = np.linalg.norm(a)
+	b_norm = np.linalg.norm(b)
+	if a_norm < 1e-12 or b_norm < 1e-12:
+		return np.eye(3, dtype=np.float64)
+	a = a / a_norm
+	b = b / b_norm
+	c = float(np.dot(a, b))
+	v = np.cross(a, b)
+	s = float(np.linalg.norm(v))
+	if s < 1e-12:
+		# Vectors are parallel or anti-parallel
+		if c > 0:
+			return np.eye(3, dtype=np.float64)
+		# 180-degree rotation around any axis perpendicular to a
+		axis = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+		if abs(a[0]) > 0.9:
+			axis = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+		axis = np.cross(a, axis)
+		axis /= (np.linalg.norm(axis) + 1e-12)
+		# Rotation by pi: R = -I + 2 * axis*axis^T
+		R = -np.eye(3, dtype=np.float64)
+		R += 2.0 * np.outer(axis, axis)
+		return R
+	K = _skew_symmetric_matrix(v)
+	R = np.eye(3, dtype=np.float64) + K + K @ K * ((1.0 - c) / (s * s + 1e-18))
+	return R
+
+
+def align_bottom_plane_and_center(
+	points_in: np.ndarray,
+	normals_in: np.ndarray,
+	logger: Optional[logging.Logger] = None,
+	bottom_quantile: float = 0.2,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+	"""
+	After axes are determined, align the bottom face to the XY plane and center its XY centroid.
+
+	Steps:
+	1) Select bottom subset by z-quantile (default 20% lowest points).
+	2) Fit plane normal via PCA on the subset (smallest eigenvector).
+	3) Rotate so the plane normal is closest-aligned to -Z or +Z (choose closest), yielding a level bottom.
+	4) Translate all points so min-z becomes 0.
+	5) Compute centroid of near-bottom band and translate XY so that this centroid is at (0, 0).
+
+	Returns (points_out, normals_out, R_level, bottom_xy_center), where R_level is the rotation applied here.
+	"""
+	if points_in.shape[0] == 0:
+		return points_in, normals_in, np.eye(3, dtype=np.float64), np.zeros(2, dtype=np.float64)
+	# 1) Bottom subset
+	z = points_in[:, 2]
+	thr = np.quantile(z, bottom_quantile)
+	mask = z <= thr
+	pts_bottom = points_in[mask]
+	if pts_bottom.shape[0] < 8:
+		# Fallback: take absolute min neighborhood
+		min_z = float(z.min())
+		mask = z <= (min_z + 1e-6)
+		pts_bottom = points_in[mask]
+		if pts_bottom.shape[0] < 3:
+			return points_in, normals_in, np.eye(3, dtype=np.float64), np.zeros(2, dtype=np.float64)
+	# 2) Plane normal via PCA (smallest eigenvector)
+	center = pts_bottom.mean(axis=0, keepdims=True)
+	pts_c = pts_bottom - center
+	cov = np.cov(pts_c.T)
+	vals, vecs = np.linalg.eigh(cov)
+	order = np.argsort(vals)
+	n = vecs[:, order[0]]  # normal candidate
+	# 3) Choose target axis (+Z or -Z) that is closer
+	# Ensure n points toward the closer hemisphere
+	if np.dot(n, np.array([0.0, 0.0, -1.0])) >= np.dot(n, np.array([0.0, 0.0, 1.0])):
+		target = np.array([0.0, 0.0, -1.0])
+	else:
+		target = np.array([0.0, 0.0, 1.0])
+	R_level = _rotation_aligning_vector_to_target(n, target)
+	points_lvl = points_in @ R_level
+	normals_lvl = normals_in @ R_level if normals_in.size else normals_in
+	# 4) Translate so min-z is 0
+	min_z_after = float(points_lvl[:, 2].min())
+	points_lvl[:, 2] -= min_z_after
+	# 5) Bottom-band centroid in XY, translate to origin
+	z2 = points_lvl[:, 2]
+	band_thr = np.quantile(z2, 0.05)
+	band_mask = z2 <= band_thr
+	if np.any(band_mask):
+		xy_center = points_lvl[band_mask, :2].mean(axis=0)
+		points_lvl[:, 0] -= xy_center[0]
+		points_lvl[:, 1] -= xy_center[1]
+	else:
+		xy_center = np.zeros(2, dtype=np.float64)
+	if logger:
+		logger.info(
+			f"Bottom alignment: bottom_q={bottom_quantile:.2f}, band_q=0.05, min_z_shift={min_z_after:.6f}, xy_center={xy_center.tolist()}"
+		)
+	return points_lvl, normals_lvl, R_level, xy_center
+
+
+def keep_largest_connected_component(
+	mesh: trimesh.Trimesh,
+	logger: Optional[logging.Logger] = None,
+) -> Tuple[trimesh.Trimesh, int, float, float]:
+	"""
+	Keep only the largest connected component of the mesh (by surface area).
+	Returns (clean_mesh, removed_count, kept_area, removed_area).
+	"""
+	try:
+		parts = mesh.split(only_watertight=False)
+	except Exception as e:
+		if logger:
+			logger.warning(f"Mesh split failed, skip component cleanup: {e}")
+		return mesh, 0, float(getattr(mesh, 'area', 0.0)), 0.0
+	if not parts or len(parts) == 1:
+		return mesh, 0, float(getattr(mesh, 'area', 0.0)), 0.0
+	areas = np.array([float(getattr(m, 'area', 0.0)) for m in parts], dtype=np.float64)
+	keep_idx = int(np.argmax(areas))
+	kept_area = float(areas[keep_idx])
+	removed_area = float(areas.sum() - kept_area)
+	removed_count = int(len(parts) - 1)
+	clean = parts[keep_idx]
+	if logger:
+		ratio = removed_area / (kept_area + 1e-12)
+		logger.info(
+			f"Connected-component cleanup: kept=1, removed={removed_count}, kept_area={kept_area:.6f}, removed_area={removed_area:.6f}, removed/kept={ratio:.6f}"
+		)
+	return clean, removed_count, kept_area, removed_area
 
 
 def ensure_enough_points(
@@ -408,6 +623,18 @@ def process_single_stl(
 			logger.info("Boundary edges: unavailable")
 		logger.info(f"Load mesh time: {(time.perf_counter() - stage_t0)*1000.0:.1f} ms")
 
+		# 0) Feet: connected-component cleanup (remove tiny far components) before sampling
+		name_l = str(rel).lower()
+		is_insole = ('insoles' in name_l) or ('insole' in stl_path.name.lower())
+		is_foot = ('feet' in name_l) or ('foot' in stl_path.name.lower())
+		if is_foot:
+			mesh_clean, removed_cnt, kept_area, removed_area = keep_largest_connected_component(mesh, logger)
+			if removed_cnt > 0:
+				logger.info(
+					f"Feet cleanup: kept_area={kept_area:.6f}, removed_area={removed_area:.6f}, components_removed={removed_cnt}"
+				)
+			mesh = mesh_clean
+
 		# 1) Sampling with FPS refinement
 		stage_t0 = time.perf_counter()
 		points_sampled, normals_sampled = ensure_enough_points(
@@ -448,9 +675,36 @@ def process_single_stl(
 
 		# 3.5) Enforce consistent anatomical orientation
 		normals_rotated = normals_sampled @ R
-		points_oriented, normals_oriented, diag_signs = enforce_foot_orientation(points_aligned, normals_rotated, logger)
+		# Enforce per-category Z orientation:
+		# - insoles: flatter face -> -Z
+		# - feet: concave (bowl-like) side -> +Z
+		points_oriented, normals_oriented, diag_signs = enforce_foot_orientation(
+			points_aligned,
+			normals_rotated,
+			logger,
+			flat_side_to_neg_z=is_insole,
+			concave_to_pos_z=is_foot,
+		)
 		logger.info(f"Orientation signs diag(S)={diag_signs.tolist()}")
+		# Compose rotation with orientation flips for all categories
+		S_mat = np.diag(diag_signs.astype(np.float64))
+		R = R @ S_mat
 		logger.info(f"PCA time: {(time.perf_counter() - stage_t0)*1000.0:.1f} ms")
+
+		# 3.6) For insoles only: align bottom face to XY plane, then align bottom centers in XY
+		if is_insole:
+			stage_t0 = time.perf_counter()
+			points_level, normals_level, R_level, bottom_xy_center = align_bottom_plane_and_center(
+				points_oriented, normals_oriented, logger
+			)
+			# Compose total rotation for saving (insoles): R_total = R * R_level
+			R = R @ R_level
+			points_oriented = points_level
+			normals_oriented = normals_level
+			logger.info(
+				f"Bottom leveling time: {(time.perf_counter() - stage_t0)*1000.0:.1f} ms | bottom_xy_center={bottom_xy_center.tolist()}"
+			)
+		# For feet: keep original behavior (no bottom leveling; R remains PCA-only)
 
 		# 4) Ensure exact point count via FPS (final uniformity)
 		stage_t0 = time.perf_counter()
