@@ -77,6 +77,7 @@ def parse_args(argv=None):
 	parser.add_argument('--epochs', type=int, default=200)
 	parser.add_argument('--lr', type=float, default=5e-4)
 	parser.add_argument('--weight-decay', type=float, default=1e-3, help='优化器权重衰减')
+	parser.add_argument('--log-interval', type=int, default=10, help='每多少 iter 打印一次训练日志')
 	parser.add_argument('--scheduler', type=str, choices=['cosine', 'step', 'plateau', 'none'], default='plateau')
 	parser.add_argument('--step-size', type=int, default=40, help='StepLR 的步长')
 	parser.add_argument('--gamma', type=float, default=0.5, help='StepLR 衰减率')
@@ -359,6 +360,13 @@ def _interactive_edit(args):
 			("学习率", args.lr, float),
 			("权重衰减", args.weight_decay, float),
 			("调度器", args.scheduler, _cast_sched),
+			("StepLR 步长", args.step_size, int),
+			("StepLR 衰减gamma", args.gamma, float),
+			("warmup 轮数", args.warmup_epochs, int),
+			("warmup 起始因子", args.warmup_start_factor, float),
+			("Plateau 耐心轮数", args.plateau_patience, int),
+			("Plateau 衰减因子", args.plateau_factor, float),
+			("Plateau 最小学习率", args.plateau_min_lr, float),
 			("使用法向", args.use_normals, lambda x: x.lower() in ('y','yes','true','1')), 
 			("每样本点数", args.num_points, int),
 			("验证集比例", args.val_ratio, float),
@@ -411,6 +419,13 @@ def _interactive_edit(args):
 			elif label == "学习率": args.lr = new_value
 			elif label == "权重衰减": args.weight_decay = new_value
 			elif label == "调度器": args.scheduler = new_value
+			elif label == "StepLR 步长": args.step_size = new_value
+			elif label == "StepLR 衰减gamma": args.gamma = new_value
+			elif label == "warmup 轮数": args.warmup_epochs = new_value
+			elif label == "warmup 起始因子": args.warmup_start_factor = new_value
+			elif label == "Plateau 耐心轮数": args.plateau_patience = new_value
+			elif label == "Plateau 衰减因子": args.plateau_factor = new_value
+			elif label == "Plateau 最小学习率": args.plateau_min_lr = new_value
 			elif label == "使用法向": args.use_normals = bool(new_value)
 			elif label == "每样本点数": args.num_points = new_value
 			elif label == "验证集比例": args.val_ratio = new_value
@@ -593,7 +608,8 @@ def train():
 				running += loss.item() * bs
 				count += bs
 
-				if it % 10 == 0:
+				log_every = max(1, int(getattr(args, 'log_interval', 10)))
+				if (it % log_every == 0) or (it == 1) or (it == len(train_loader)):
 					current_lr = optimizer.param_groups[0]['lr']
 					msg = (
 						f"[{side_run}] Ep{epoch:03d} It{it:04d}/{len(train_loader)} | "
@@ -620,14 +636,19 @@ def train():
 			hist_val_loss.append(val_loss)
 
 			# 每个 epoch 均输出一次训练/验证损失
-			logger.info(f"[{side_run}] Ep{epoch:03d} 训练/验证: {train_loss:.6f}/{val_loss:.6f}")
+			current_lr = optimizer.param_groups[0]['lr']
+			logger.info(f"[{side_run}] Ep{epoch:03d} 训练/验证: {train_loss:.6f}/{val_loss:.6f} | lr={current_lr:.2e} | time={time.time()-start_t:.1f}s")
 
 			# 调度器
 			if scheduler is not None and (not args.warmup_epochs or epoch > args.warmup_epochs):
+				prev_lr = optimizer.param_groups[0]['lr']
 				if isinstance(scheduler, ReduceLROnPlateau):
 					scheduler.step(val_loss)
 				else:
 					scheduler.step()
+				new_lr = optimizer.param_groups[0]['lr']
+				if abs(new_lr - prev_lr) > 1e-12:
+					logger.info(f"[{side_run}] Ep{epoch:03d} 调度器更新: lr {prev_lr:.2e} -> {new_lr:.2e}")
 
 			# 保存最佳模型与早停
 			if val_loss < best_val - args.min_delta:
@@ -982,6 +1003,11 @@ def train():
 	except Exception:
 		pass
 	logger = setup_logger(log_dir_path, name='train_deformnet')
+	# 环境与设备信息
+	logger.info(f"PyTorch: {torch.__version__} | CUDA: {torch.version.cuda} | cudnn: {torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else 'N/A'}")
+	if torch.cuda.is_available():
+		props = torch.cuda.get_device_properties(0)
+		logger.info(f"CUDA Device: {props.name} | SMs: {props.multi_processor_count} | Mem: {_format_bytes(props.total_memory)}")
 	logger.info(f"使用设备: {device}")
 
 	side, tpl = _resolve_templates_for_side(args)
@@ -1002,9 +1028,14 @@ def train():
 		logger.info(f"开始训练侧别: {side_run} | 模板: {template_path}")
 
 		train_loader, val_loader = make_dataloaders(args, side=side_run, template_path=template_path)
+		logger.info(f"数据集: 训练批次={len(train_loader)} | 验证批次={len(val_loader)} | 每批={args.batch_size}")
 		encoder, regressor = build_model(args)
 		encoder.to(device)
 		regressor.to(device)
+		# 模型配置与参数量
+		logger.info(f"DGCNN: k={args.dgcnn_k}, feat_dim={args.dgcnn_feat_dim}, dropout={args.dgcnn_dropout}, ms_ks={args.dgcnn_multi_scale_ks}")
+		logger.info(f"Regressor: hidden={_parse_hidden_dims(args.hidden_dims)}, mlp_dropout={args.mlp_dropout}")
+		logger.info(f"参数量: encoder={_model_num_params(encoder):,} | regressor={_model_num_params(regressor):,}")
 
 		params = list(encoder.parameters()) + list(regressor.parameters())
 		optimizer = Adam(params, lr=args.lr, weight_decay=args.weight_decay)
@@ -1016,6 +1047,17 @@ def train():
 			scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.plateau_factor, patience=args.plateau_patience, min_lr=args.plateau_min_lr)
 		else:
 			scheduler = None
+		# 优化与调度器/损失配置日志
+		logger.info(f"优化器: Adam(lr={args.lr}, weight_decay={args.weight_decay}) | 调度器={args.scheduler}")
+		if args.scheduler == 'step':
+			logger.info(f"StepLR: step_size={args.step_size}, gamma={args.gamma}")
+		elif args.scheduler == 'plateau':
+			logger.info(f"ReduceLROnPlateau: patience={args.plateau_patience}, factor={args.plateau_factor}, min_lr={args.plateau_min_lr}")
+		elif args.scheduler == 'cosine':
+			logger.info(f"CosineAnnealingLR: T_max={args.epochs}")
+		if args.warmup_epochs:
+			logger.info(f"Warmup: epochs={args.warmup_epochs}, start_factor={args.warmup_start_factor}")
+		logger.info(f"损失: α(CD)={args.global_cd_weight}, β(EMD)={args.emd_weight}, localCD={args.local_cd_weight}, offsetL2={args.offset_l2_weight} | CD归一化={args.cd_normalize_loss}")
 
 		best_val = float('inf')
 		patience_counter = 0
@@ -1024,6 +1066,7 @@ def train():
 		hist_val_loss: list[float] = []
 
 		for epoch in range(1, args.epochs + 1):
+			start_t = time.time()
 			encoder.train()
 			regressor.train()
 			if args.warmup_epochs and epoch <= args.warmup_epochs:
@@ -1051,6 +1094,7 @@ def train():
 					normalize_loss=bool(getattr(args, 'cd_normalize_loss', False)),
 				)
 				loss = args.global_cd_weight * cd
+				lcd = torch.tensor(0.0, device=device)
 				if args.local_cd_weight > 0:
 					lcd = local_chamfer_distance(
 						pred, target,
@@ -1061,6 +1105,7 @@ def train():
 						normalize_loss=bool(getattr(args, 'cd_normalize_loss', False)),
 					)
 					loss = loss + args.local_cd_weight * lcd
+				e_val = torch.tensor(0.0, device=device)
 				if getattr(args, 'emd_weight', 0.0) > 0:
 					e = emd_loss(
 						pred, target,
@@ -1071,13 +1116,16 @@ def train():
 						normalize_loss=bool(getattr(args, 'cd_normalize_loss', False)),
 					)
 					loss = loss + args.emd_weight * e
+					e_val = e
+				reg_l2 = torch.tensor(0.0, device=device)
 				if args.offset_l2_weight > 0:
 					offsets = pred - template
 					reg_l2 = torch.mean(torch.sum(offsets * offsets, dim=-1))
 					loss = loss + args.offset_l2_weight * reg_l2
 				loss.backward()
+				grad_total_norm = torch.tensor(0.0)
 				if getattr(args, 'clip_grad_norm', 0.0) and args.clip_grad_norm > 0:
-					torch.nn.utils.clip_grad_norm_(params, max_norm=float(args.clip_grad_norm))
+					grad_total_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=float(args.clip_grad_norm))
 				optimizer.step()
 
 				bs = foot.size(0)
@@ -1085,7 +1133,12 @@ def train():
 				count += bs
 
 				if it % 10 == 0:
-					logger.info(f"[{side_run}] Epoch {epoch:03d} | Iter {it:04d}/{len(train_loader)} | loss={loss.item():.6f}")
+					current_lr = optimizer.param_groups[0]['lr']
+					logger.info(
+						f"[{side_run}] Ep{epoch:03d} It{it:04d}/{len(train_loader)} | "
+						f"loss={loss.item():.6f} | cd={cd.item():.6f} | lcd={lcd.item():.6f} | emd={e_val.item():.6f} | "
+						f"regL2={reg_l2.item():.6f} | grad_norm={float(grad_total_norm):.4f} | lr={current_lr:.2e}"
+					)
 				if pbar is not None:
 					pbar.set_postfix(loss=f"{loss.item():.6f}")
 					pbar.update(1)
@@ -1101,13 +1154,21 @@ def train():
 				emd_cfg = {'weight': args.emd_weight, 'eps': args.emd_eps, 'iters': args.emd_iters, 'subset': args.emd_subset}
 			weights = {'cd': args.global_cd_weight}
 			val_loss = evaluate(encoder, regressor, val_loader, device, cd_chunk=args.cd_chunk, local_cd_cfg=local_cfg, cd_normalize=bool(getattr(args, 'cd_normalize_loss', False)), emd_cfg=emd_cfg, weights=weights)
-			logger.info(f"[{side_run}] [Epoch {epoch:03d}] train_loss={train_loss:.6f} | val_loss={val_loss:.6f}")
+			hist_train_loss.append(train_loss)
+			hist_val_loss.append(val_loss)
+			elapsed = time.time() - start_t
+			current_lr = optimizer.param_groups[0]['lr']
+			logger.info(f"[{side_run}] Ep{epoch:03d} 训练/验证: {train_loss:.6f}/{val_loss:.6f} | lr={current_lr:.2e} | time={elapsed:.1f}s")
 
 			if scheduler is not None and (not args.warmup_epochs or epoch > args.warmup_epochs):
+				prev_lr = optimizer.param_groups[0]['lr']
 				if isinstance(scheduler, ReduceLROnPlateau):
 					scheduler.step(val_loss)
 				else:
 					scheduler.step()
+				new_lr = optimizer.param_groups[0]['lr']
+				if abs(new_lr - prev_lr) > 1e-12:
+					logger.info(f"[{side_run}] Ep{epoch:03d} 调度器更新: lr {prev_lr:.2e} -> {new_lr:.2e}")
 
 			if val_loss < best_val - args.min_delta:
 				best_val = val_loss
@@ -1126,7 +1187,7 @@ def train():
 				logger.info(f"[{side_run}] 保存最佳模型 (val={best_val:.6f}) -> {sub_save / 'best.pth'}")
 			else:
 				patience_counter += 1
-				logger.info(f"[{side_run}] 验证损失未改善，耐心计数: {patience_counter}/{args.patience}")
+				logger.info(f"[{side_run}] Ep{epoch:03d} | 耗时: {elapsed:.1f}s | 耐心: {patience_counter}/{args.patience}")
 
 			if args.early_stopping and patience_counter >= args.patience:
 				logger.info(f"[{side_run}] 提前停止触发！最佳验证损失: {best_val:.6f} (第 {best_val_epoch} 轮)")
@@ -1141,6 +1202,7 @@ def train():
 			'side': side_run,
 		}
 		torch.save(final_ckpt, sub_save / 'final.pth')
+		logger.info(f"[{side_run}] 训练结束，最终模型已保存到 {sub_save / 'final.pth'} | 最佳 val={best_val:.6f} @ epoch {best_val_epoch}")
 
 		try:
 			log_dir_path = sub_log

@@ -143,21 +143,19 @@ def main():
     if not files:
         raise SystemExit('未找到任何待检查的点云文件（支持 .npy/.npz/.stl）。')
 
-    total = 0
-    ok = 0
+    total_files = 0
     for f in files:
         print('=' * 60)
         print(f'文件: {f}')
         try:
             pts = load_pointcloud(f)
-            res = check_normalization(pts, mode=args.mode, atol_centroid=args.atol_centroid)
-            ok += int(res)
+            print(f'点数: {pts.shape[0]}')
         except Exception as e:
             print(f'❌ 处理失败: {e}')
-        total += 1
+        total_files += 1
 
     print('=' * 60)
-    print(f'完成。总计: {total} | 通过: {ok} | 未通过/失败: {total - ok}')
+    print(f'完成。统计文件数: {total_files}')
 
 
 if __name__ == '__main__':

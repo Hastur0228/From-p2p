@@ -1,53 +1,19 @@
-2025-08-22 11:32:33,951 | INFO | Input STL: D:\Cursor Repos\From p2p\data\raw\feet\055_foot_L.stl
-2025-08-22 11:32:33,951 | INFO | Output log: D:\Cursor Repos\From p2p\Log\preprocess\feet\055_foot_L.log
-2025-08-22 11:32:33,951 | INFO | Parameters: num_points=4096, candidate_multiplier=4, z_low_percent=None, z_high_percent=None, seed=None
-2025-08-22 11:32:33,952 | INFO | File: size_bytes=1241884, mtime=2025-08-13 13:43:45
-2025-08-22 11:32:33,952 | INFO | Env: python=3.11.13, numpy=2.3.2, trimesh=4.7.4, platform=Windows-10-10.0.26100-SP0
-2025-08-22 11:32:33,993 | INFO | Mesh: vertices=12738, faces=24836
-2025-08-22 11:32:34,007 | WARNING | Mesh is not watertight; surface sampling may include boundary artifacts
-2025-08-22 11:32:34,010 | INFO | Mesh surface area: 21698.096231
-2025-08-22 11:32:34,020 | INFO | Mesh volume: 107068.081394
-2025-08-22 11:32:34,021 | INFO | Mesh AABB min=[-52.47991180419922, 0.0, -22.133935928344727] max=[52.291603088378906, 247.66482543945312, 0.0]
-2025-08-22 11:32:34,021 | INFO | Boundary edges: 0
-2025-08-22 11:32:34,021 | INFO | Load mesh time: 69.6 ms
-2025-08-22 11:32:34,057 | INFO | Surface sampling: candidates=16384 (target=4096, multiplier=4)
-2025-08-22 11:32:34,066 | INFO | Running Farthest Point Sampling (FPS) to enforce even spacing
-2025-08-22 11:32:34,142 | INFO | FPS progress: 409/4096
-2025-08-22 11:32:34,220 | INFO | FPS progress: 818/4096
-2025-08-22 11:32:34,297 | INFO | FPS progress: 1227/4096
-2025-08-22 11:32:34,376 | INFO | FPS progress: 1636/4096
-2025-08-22 11:32:34,452 | INFO | FPS progress: 2045/4096
-2025-08-22 11:32:34,528 | INFO | FPS progress: 2454/4096
-2025-08-22 11:32:34,606 | INFO | FPS progress: 2863/4096
-2025-08-22 11:32:34,687 | INFO | FPS progress: 3272/4096
-2025-08-22 11:32:34,770 | INFO | FPS progress: 3681/4096
-2025-08-22 11:32:34,850 | INFO | FPS progress: 4090/4096
-2025-08-22 11:32:34,851 | INFO | Round 1: accumulated=4096, kept=4096 (100.00%), time=793.5 ms
-2025-08-22 11:32:34,851 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
-2025-08-22 11:32:34,851 | INFO | Sampled points: (4096, 3), normals: (4096, 3)
-2025-08-22 11:32:34,851 | INFO | Sampling time: 793.8 ms
-2025-08-22 11:32:34,852 | INFO | Centering only: centroid=[-1.7484417378100334, 130.32559674704444, -2.819753971765584] | scale fixed to 1.000000 (no scaling)
-2025-08-22 11:32:34,852 | INFO | Axis x stats (centered): min=-50.070027, mean=-0.000000, std=25.553844, max=53.884045
-2025-08-22 11:32:34,852 | INFO | Axis y stats (centered): min=-130.259196, mean=-0.000000, std=67.492318, max=117.284733
-2025-08-22 11:32:34,852 | INFO | Axis z stats (centered): min=-18.638633, mean=0.000000, std=4.083000, max=2.811264
-2025-08-22 11:32:34,852 | INFO | Centering time: 0.4 ms
-2025-08-22 11:32:34,852 | INFO | PCA alignment: explained variance ratio=0.8748, 0.1227, 0.0024
-2025-08-22 11:32:34,853 | INFO | Rotation matrix (columns are principal axes):
-[[-0.061711  0.995494  0.071997]
- [ 0.99803   0.06073   0.015746]
- [ 0.011303  0.072827 -0.997281]]
-2025-08-22 11:32:34,853 | INFO | Rotation matrix det=1.000000
-2025-08-22 11:32:34,853 | INFO | Orientation enforcement (concave-to-pos-z (corr_pos=-0.0510, corr_neg=0.0510)): sz=-1, width_low=62.656829, width_high=81.697932 -> sx=1, sy=-1
-2025-08-22 11:32:34,853 | INFO | Orientation signs diag(S)=[1.0, -1.0, -1.0]
-2025-08-22 11:32:34,854 | INFO | PCA time: 1.6 ms
-2025-08-22 11:32:34,854 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
-2025-08-22 11:32:34,854 | INFO | Final points: (4096, 3), normals: (4096, 3)
-2025-08-22 11:32:34,854 | INFO | Aligned normalized AABB min=[-130.51796619207235, -55.4334625511782, -15.39120614640064] max=[119.2646834617278, 46.98976184928311, 5.272142862816747]
-2025-08-22 11:32:34,855 | INFO | Final radii percentiles: p5=18.946582, p50=63.018630, p95=117.658917; centroid_norm=0.000000
-2025-08-22 11:32:34,855 | INFO | Axis x stats (final): min=-130.517966, mean=-0.000000, std=67.607956, max=119.264683
-2025-08-22 11:32:34,855 | INFO | Axis y stats (final): min=-55.433463, mean=0.000000, std=25.323748, max=46.989762
-2025-08-22 11:32:34,855 | INFO | Axis z stats (final): min=-15.391206, mean=0.000000, std=3.571407, max=5.272143
-2025-08-22 11:32:34,855 | INFO | Normal lengths: min=1.000000, mean=1.000000, max=1.000000
-2025-08-22 11:32:34,855 | INFO | Final FPS time: 1.8 ms
-2025-08-22 11:32:34,866 | INFO | Saved bundle (npz): D:\Cursor Repos\From p2p\data\pointcloud\feet\055_foot_L.npz | points=(4096, 3) normals=(4096, 3)
-2025-08-22 11:32:34,866 | INFO | Completed successfully.
+2025-08-26 15:18:41,459 | INFO | Input STL: D:\Cursor Repos\From p2p\data\raw\feet\055_foot_L.stl
+2025-08-26 15:18:41,459 | INFO | Output log: D:\Cursor Repos\From p2p\Log\preprocess\feet\055_foot_L.log
+2025-08-26 15:18:41,459 | INFO | Parameters: num_points=4096, initial_points=20000, candidate_multiplier=4, z_low_percent=None, z_high_percent=None, seed=None, clip=on, H=10.0
+2025-08-26 15:18:41,459 | INFO | File: size_bytes=?, mtime=? (stat failed)
+2025-08-26 15:18:41,459 | INFO | Env: python=3.11.13, numpy=2.3.2, trimesh=4.7.4, platform=Windows-10-10.0.26100-SP0
+2025-08-26 15:18:41,459 | ERROR | Failed to process D:\Cursor Repos\From p2p\data\raw\feet\055_foot_L.stl: string is not a file: `D:\Cursor Repos\From p2p\data\raw\feet\055_foot_L.stl`
+Traceback (most recent call last):
+  File "d:\Cursor Repos\From p2p\scripts\stl2pointcloud_withpreprocess.py", line 621, in process_single_stl
+    mesh = trimesh.load(str(stl_path), force='mesh')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Cursor Repos\From p2p\.conda\Lib\site-packages\trimesh\exchange\load.py", line 111, in load
+    loaded = load_scene(
+             ^^^^^^^^^^^
+  File "d:\Cursor Repos\From p2p\.conda\Lib\site-packages\trimesh\exchange\load.py", line 193, in load_scene
+    arg = _parse_file_args(
+          ^^^^^^^^^^^^^^^^^
+  File "d:\Cursor Repos\From p2p\.conda\Lib\site-packages\trimesh\exchange\load.py", line 624, in _parse_file_args
+    raise ValueError(f"string is not a file: `{file_obj}`")
+ValueError: string is not a file: `D:\Cursor Repos\From p2p\data\raw\feet\055_foot_L.stl`

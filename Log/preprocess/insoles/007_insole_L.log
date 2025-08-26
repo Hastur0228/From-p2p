@@ -1,54 +1,19 @@
-2025-08-22 11:35:45,713 | INFO | Input STL: D:\Cursor Repos\From p2p\data\raw\insoles\007_insole_L.stl
-2025-08-22 11:35:45,713 | INFO | Output log: D:\Cursor Repos\From p2p\Log\preprocess\insoles\007_insole_L.log
-2025-08-22 11:35:45,713 | INFO | Parameters: num_points=4096, candidate_multiplier=4, z_low_percent=None, z_high_percent=None, seed=None
-2025-08-22 11:35:45,713 | INFO | File: size_bytes=2440584, mtime=2025-08-13 13:00:53
-2025-08-22 11:35:45,713 | INFO | Env: python=3.11.13, numpy=2.3.2, trimesh=4.7.4, platform=Windows-10-10.0.26100-SP0
-2025-08-22 11:35:45,785 | INFO | Mesh: vertices=24407, faces=48810
-2025-08-22 11:35:45,818 | INFO | Mesh surface area: 24101.991701
-2025-08-22 11:35:45,837 | INFO | Mesh volume: 58635.226832
-2025-08-22 11:35:45,841 | INFO | Mesh AABB min=[-32.55799865722656, -88.49579620361328, -0.9085000157356262] max=[32.441898345947266, 89.50409698486328, 23.1294002532959]
-2025-08-22 11:35:45,841 | INFO | Boundary edges: 0
-2025-08-22 11:35:45,841 | INFO | Load mesh time: 127.4 ms
-2025-08-22 11:35:45,841 | INFO | Surface sampling: candidates=16384 (target=4096, multiplier=4)
-2025-08-22 11:35:45,857 | INFO | Running Farthest Point Sampling (FPS) to enforce even spacing
-2025-08-22 11:35:45,935 | INFO | FPS progress: 409/4096
-2025-08-22 11:35:46,014 | INFO | FPS progress: 818/4096
-2025-08-22 11:35:46,089 | INFO | FPS progress: 1227/4096
-2025-08-22 11:35:46,166 | INFO | FPS progress: 1636/4096
-2025-08-22 11:35:46,249 | INFO | FPS progress: 2045/4096
-2025-08-22 11:35:46,326 | INFO | FPS progress: 2454/4096
-2025-08-22 11:35:46,406 | INFO | FPS progress: 2863/4096
-2025-08-22 11:35:46,484 | INFO | FPS progress: 3272/4096
-2025-08-22 11:35:46,569 | INFO | FPS progress: 3681/4096
-2025-08-22 11:35:46,654 | INFO | FPS progress: 4090/4096
-2025-08-22 11:35:46,655 | INFO | Round 1: accumulated=4096, kept=4096 (100.00%), time=813.8 ms
-2025-08-22 11:35:46,655 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
-2025-08-22 11:35:46,655 | INFO | Sampled points: (4096, 3), normals: (4096, 3)
-2025-08-22 11:35:46,655 | INFO | Sampling time: 814.5 ms
-2025-08-22 11:35:46,656 | INFO | Centering only: centroid=[3.971920996470789, -6.749028932901406, 4.430332204649935] | scale fixed to 1.000000 (no scaling)
-2025-08-22 11:35:46,656 | INFO | Axis x stats (centered): min=-36.403839, mean=0.000000, std=17.447580, max=28.422823
-2025-08-22 11:35:46,656 | INFO | Axis y stats (centered): min=-81.724788, mean=-0.000000, std=48.646520, max=96.096595
-2025-08-22 11:35:46,656 | INFO | Axis z stats (centered): min=-5.333841, mean=0.000000, std=5.948042, max=18.659197
-2025-08-22 11:35:46,656 | INFO | Centering time: 0.7 ms
-2025-08-22 11:35:46,657 | INFO | PCA alignment: explained variance ratio=0.8800, 0.1103, 0.0097
-2025-08-22 11:35:46,657 | INFO | Rotation matrix (columns are principal axes):
-[[-0.062878  0.993916  0.090429]
- [ 0.996519  0.067495 -0.048936]
- [-0.054742  0.087037 -0.9947  ]]
-2025-08-22 11:35:46,657 | INFO | Rotation matrix det=1.000000
-2025-08-22 11:35:46,658 | INFO | Orientation enforcement (flat-to-neg-z): sz=-1, width_low=42.694587, width_high=54.964100 -> sx=1, sy=-1
-2025-08-22 11:35:46,658 | INFO | Orientation signs diag(S)=[1.0, -1.0, -1.0]
-2025-08-22 11:35:46,658 | INFO | PCA time: 1.6 ms
-2025-08-22 11:35:46,658 | INFO | Bottom alignment: bottom_q=0.20, band_q=0.05, min_z_shift=-14.441701, xy_center=[-60.65162487287832, -7.188328522796405]
-2025-08-22 11:35:46,659 | INFO | Bottom leveling time: 0.7 ms | bottom_xy_center=[-60.65162487287832, -7.188328522796405]
-2025-08-22 11:35:46,659 | INFO | Requested samples 4096 >= candidates 4096; returning all indices.
-2025-08-22 11:35:46,659 | INFO | Final points: (4096, 3), normals: (4096, 3)
-2025-08-22 11:35:46,660 | INFO | Aligned normalized AABB min=[-22.298428064142094, -23.71955730678529, 0.0] max=[156.58100681186284, 41.06523023916398, 27.102387270147176]
-2025-08-22 11:35:46,660 | INFO | Final radii percentiles: p5=15.186827, p50=65.423073, p95=141.882204; centroid_norm=62.760293
-2025-08-22 11:35:46,660 | INFO | Axis x stats (final): min=-22.298428, mean=60.651625, std=48.758699, max=156.581007
-2025-08-22 11:35:46,660 | INFO | Axis y stats (final): min=-23.719557, mean=7.188329, std=17.247814, max=41.065230
-2025-08-22 11:35:46,660 | INFO | Axis z stats (final): min=0.000000, mean=14.441701, std=5.602082, max=27.102387
-2025-08-22 11:35:46,661 | INFO | Normal lengths: min=1.000000, mean=1.000000, max=1.000000
-2025-08-22 11:35:46,661 | INFO | Final FPS time: 2.1 ms
-2025-08-22 11:35:46,668 | INFO | Saved bundle (npz): D:\Cursor Repos\From p2p\data\pointcloud\insoles\007_insole_L.npz | points=(4096, 3) normals=(4096, 3)
-2025-08-22 11:35:46,668 | INFO | Completed successfully.
+2025-08-26 15:18:43,485 | INFO | Input STL: D:\Cursor Repos\From p2p\data\raw\insoles\007_insole_L.stl
+2025-08-26 15:18:43,485 | INFO | Output log: D:\Cursor Repos\From p2p\Log\preprocess\insoles\007_insole_L.log
+2025-08-26 15:18:43,485 | INFO | Parameters: num_points=4096, initial_points=20000, candidate_multiplier=4, z_low_percent=None, z_high_percent=None, seed=None, clip=on, H=10.0
+2025-08-26 15:18:43,485 | INFO | File: size_bytes=?, mtime=? (stat failed)
+2025-08-26 15:18:43,485 | INFO | Env: python=3.11.13, numpy=2.3.2, trimesh=4.7.4, platform=Windows-10-10.0.26100-SP0
+2025-08-26 15:18:43,486 | ERROR | Failed to process D:\Cursor Repos\From p2p\data\raw\insoles\007_insole_L.stl: string is not a file: `D:\Cursor Repos\From p2p\data\raw\insoles\007_insole_L.stl`
+Traceback (most recent call last):
+  File "d:\Cursor Repos\From p2p\scripts\stl2pointcloud_withpreprocess.py", line 621, in process_single_stl
+    mesh = trimesh.load(str(stl_path), force='mesh')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "d:\Cursor Repos\From p2p\.conda\Lib\site-packages\trimesh\exchange\load.py", line 111, in load
+    loaded = load_scene(
+             ^^^^^^^^^^^
+  File "d:\Cursor Repos\From p2p\.conda\Lib\site-packages\trimesh\exchange\load.py", line 193, in load_scene
+    arg = _parse_file_args(
+          ^^^^^^^^^^^^^^^^^
+  File "d:\Cursor Repos\From p2p\.conda\Lib\site-packages\trimesh\exchange\load.py", line 624, in _parse_file_args
+    raise ValueError(f"string is not a file: `{file_obj}`")
+ValueError: string is not a file: `D:\Cursor Repos\From p2p\data\raw\insoles\007_insole_L.stl`

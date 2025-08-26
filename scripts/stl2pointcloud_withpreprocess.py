@@ -76,6 +76,28 @@ def choose_save_parameters_interactive() -> tuple[bool, Path, str]:
 		return False, Path('data') / 'pointcloud', 'npz'  # 默认值，不会使用
 
 
+
+def choose_height_clipping_interactive() -> tuple[bool, float]:
+	"""
+	交互式选择高度裁剪策略。
+	返回 (是否裁剪, 最大高度H)。当不裁剪时，H 返回 0.0（忽略）。
+	"""
+	print("是否进行高度裁剪? (裁剪在第4步: 平移 min-z 到 0 后，按 z<=H 保留)")
+	print("  [1] 不裁剪 (推荐用于保留完整高度)")
+	print("  [2] 裁剪到最大高度 H (默认 H=1.0)")
+	choice = input("选择 1 或 2: ").strip()
+	if choice == '1':
+		return False, 0.0
+	# 选择裁剪
+	h_str = input("请输入最大高度 H (按 Enter 使用默认 1.0): ").strip()
+	try:
+		h = float(h_str) if h_str else 1.0
+	except Exception:
+		print("输入无效，使用默认 H=1.0")
+		h = 1.0
+	return True, float(h)
+
+
 def list_stl_files(input_dirs: List[Path]) -> List[Path]:
 	"""Recursively list all STL files under the provided directories."""
 	stl_files: List[Path] = []
@@ -556,9 +578,12 @@ def process_single_stl(
 	root_dir: Path,
 	logs_root: Path,
 	num_points: int,
+	initial_points: int,
 	candidate_multiplier: int,
 	z_low_percent: Optional[float],
 	z_high_percent: Optional[float],
+	clip_enabled: bool,
+	clip_height: float,
 	seed: Optional[int],
 	save_output: bool,
 	output_base_dir: Path,
@@ -574,8 +599,9 @@ def process_single_stl(
 	logger.info(f"Input STL: {stl_path}")
 	logger.info(f"Output log: {log_path}")
 	logger.info(
-		f"Parameters: num_points={num_points}, candidate_multiplier={candidate_multiplier}, "
-		f"z_low_percent={z_low_percent}, z_high_percent={z_high_percent}, seed={seed}"
+		f"Parameters: num_points={num_points}, initial_points={initial_points}, candidate_multiplier={candidate_multiplier}, "
+		f"z_low_percent={z_low_percent}, z_high_percent={z_high_percent}, seed={seed}, "
+		f"clip={'on' if clip_enabled else 'off'}, H={clip_height if clip_enabled else 'N/A'}"
 	)
 	# Environment & file metadata
 	try:
@@ -635,18 +661,18 @@ def process_single_stl(
 				)
 			mesh = mesh_clean
 
-		# 1) Sampling with FPS refinement
+		# 1) Initial large sampling to determine axes (e.g., 40000)
 		stage_t0 = time.perf_counter()
-		points_sampled, normals_sampled = ensure_enough_points(
+		points_sampled, normals_sampled = sample_points_on_mesh(
 			mesh=mesh,
-			desired_points=num_points,
+			desired_points=initial_points,
 			candidate_multiplier=candidate_multiplier,
-			low_percent=z_low_percent,
-			high_percent=z_high_percent,
 			logger=logger,
 		)
-		logger.info(f"Sampled points: {points_sampled.shape}, normals: {normals_sampled.shape}")
-		logger.info(f"Sampling time: {(time.perf_counter() - stage_t0)*1000.0:.1f} ms")
+		logger.info(
+			f"Initial sampling: points={points_sampled.shape}, normals={normals_sampled.shape} (target={initial_points})"
+		)
+		logger.info(f"Initial sampling time: {(time.perf_counter() - stage_t0)*1000.0:.1f} ms")
 
 		# 2) Centering only (no scaling)
 		stage_t0 = time.perf_counter()
@@ -706,11 +732,37 @@ def process_single_stl(
 			)
 		# For feet: keep original behavior (no bottom leveling; R remains PCA-only)
 
-		# 4) Ensure exact point count via FPS (final uniformity)
+		# 4) Shift so min-z becomes 0, then optionally clip by z<=H
+		min_z = float(points_oriented[:, 2].min()) if points_oriented.size else 0.0
+		points_oriented[:, 2] -= min_z
+		zvals = points_oriented[:, 2]
+		if clip_enabled:
+			keep_mask = zvals <= float(clip_height)
+			if not np.any(keep_mask):
+				if logger:
+					logger.warning(f"Clipping by z<={clip_height:.3f} removed all points; skip clipping step.")
+				points_kept = points_oriented
+				normals_kept = normals_oriented
+			else:
+				points_kept = points_oriented[keep_mask]
+				normals_kept = normals_oriented[keep_mask]
+			if logger:
+				logger.info(
+					f"Z shift+clip(H={clip_height:.3f}): min_z_shifted={min_z:.6f}, kept={points_kept.shape[0]}/{points_oriented.shape[0]}"
+				)
+		else:
+			points_kept = points_oriented
+			normals_kept = normals_oriented
+			if logger:
+				logger.info(
+					f"Z shift only (no clipping): min_z_shifted={min_z:.6f}, kept={points_kept.shape[0]}/{points_oriented.shape[0]}"
+				)
+
+		# 5) Resample down to target count via FPS
 		stage_t0 = time.perf_counter()
-		final_idx = farthest_point_sampling(points_oriented, num_points, logger)
-		points_final = points_oriented[final_idx]
-		normals_final = normals_oriented[final_idx]
+		final_idx = farthest_point_sampling(points_kept, num_points, logger)
+		points_final = points_kept[final_idx]
+		normals_final = normals_kept[final_idx]
 		logger.info(f"Final points: {points_final.shape}, normals: {normals_final.shape}")
 		# Final cloud stats
 		bbox_min = points_final.min(axis=0)
@@ -821,6 +873,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 		help="Directory to store per-file logs (relative structure preserved under this root).",
 	)
 	parser.add_argument(
+		"--initial-points",
+		type=int,
+		default=20000,
+		help="Initial large sample size before orientation and z-clipping (e.g., 20000).",
+	)
+	parser.add_argument(
 		"--num-points",
 		type=int,
 		default=4096,
@@ -846,6 +904,17 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 		type=float,
 		default=None,
 		help="Optional: remove points above this z-height percentile (e.g., 99.5 for tall spikes).",
+	)
+	parser.add_argument(
+		"--clip-height",
+		type=float,
+		default=None,
+		help="Set max height H after min-z shift; keep z<=H. Leave unset for interactive.",
+	)
+	parser.add_argument(
+		"--no-clip",
+		action='store_true',
+		help="Disable height clipping (interactive if --clip-height not set and this is false).",
 	)
 	parser.add_argument(
 		"--seed",
@@ -891,6 +960,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 	save_output = args.save_output
 	output_base_dir = args.output_dir
 	output_format = args.format
+	# Height clipping selection
+	if args.no_clip:
+		clip_enabled = False
+		clip_height = 0.0
+	elif args.clip_height is not None:
+		clip_enabled = True
+		clip_height = float(args.clip_height)
+	else:
+		print("\n=== 高度裁剪参数选择 ===")
+		clip_enabled, clip_height = choose_height_clipping_interactive()
+		print("=== 高度裁剪参数选择完成 ===\n")
 	
 	if not args.save_output or args.output_dir is None or args.format == 'auto':
 		print("\n=== 交互式参数选择 ===")
@@ -926,9 +1006,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 			root_dir=root_dir,
 			logs_root=logs_root,
 			num_points=args.num_points,
+			initial_points=args.initial_points,
 			candidate_multiplier=args.candidate_multiplier,
 			z_low_percent=args.z_low_percent,
 			z_high_percent=args.z_high_percent,
+			clip_enabled=clip_enabled,
+			clip_height=clip_height,
 			seed=args.seed,
 			save_output=save_output,
 			output_base_dir=output_base_dir,
