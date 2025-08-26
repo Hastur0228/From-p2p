@@ -601,7 +601,7 @@ def process_single_stl(
 	logger.info(
 		f"Parameters: num_points={num_points}, initial_points={initial_points}, candidate_multiplier={candidate_multiplier}, "
 		f"z_low_percent={z_low_percent}, z_high_percent={z_high_percent}, seed={seed}, "
-		f"clip={'on' if clip_enabled else 'off'}, H={clip_height if clip_enabled else 'N/A'}"
+		f"clip={'on' if clip_enabled else 'off'}, H={clip_height if clip_enabled else 'N/A'}, clip_scope=feet-only"
 	)
 	# Environment & file metadata
 	try:
@@ -732,11 +732,13 @@ def process_single_stl(
 			)
 		# For feet: keep original behavior (no bottom leveling; R remains PCA-only)
 
-		# 4) Shift so min-z becomes 0, then optionally clip by z<=H
+		# 4) Shift so min-z becomes 0, then optionally clip by z<=H (feet-only policy)
 		min_z = float(points_oriented[:, 2].min()) if points_oriented.size else 0.0
 		points_oriented[:, 2] -= min_z
 		zvals = points_oriented[:, 2]
-		if clip_enabled:
+		# Apply clipping only for feet; insoles skip even if clip_enabled
+		clip_enabled_effective = bool(clip_enabled and is_foot)
+		if clip_enabled_effective:
 			keep_mask = zvals <= float(clip_height)
 			if not np.any(keep_mask):
 				if logger:
@@ -754,8 +756,9 @@ def process_single_stl(
 			points_kept = points_oriented
 			normals_kept = normals_oriented
 			if logger:
+				policy_note = " (insoles policy)" if (clip_enabled and not is_foot) else ""
 				logger.info(
-					f"Z shift only (no clipping): min_z_shifted={min_z:.6f}, kept={points_kept.shape[0]}/{points_oriented.shape[0]}"
+					f"Z shift only (no clipping{policy_note}): min_z_shifted={min_z:.6f}, kept={points_kept.shape[0]}/{points_oriented.shape[0]}"
 				)
 
 		# 5) Resample down to target count via FPS
