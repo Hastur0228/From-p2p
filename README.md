@@ -2,6 +2,46 @@
 
 A deep learning system for generating personalized shoe insoles from foot scans using point cloud deformation networks.
 
+## 项目说明（中文）
+
+### 使用了什么技术
+
+- 深度学习与训练框架：PyTorch 2.x（支持 CUDA 加速）
+- 点云编码器：DGCNN（见 `Models/dgcnn_encoder.py`）
+- 点云变形网络：模板到个体的点级位移回归（见 `Models/deformation_net.py`）
+- 损失函数：Chamfer Distance、EMD、F-score、法向一致性（见 `losses/`）
+- 三维/可视化与数据处理：Open3D、Trimesh、Matplotlib、Pandas、Scikit-learn
+- 训练策略与工程：早停、学习率调度（Plateau/余弦 + Warmup）、数据增强、日志与曲线（`Log/`）
+- 工具脚本：点云/网格处理与模板生成（`scripts/`、`npy_to_xyz.py`、`npz_to_stl.py`）
+
+### 目前能达到什么效果
+
+- 从足部点云自动生成个性化鞋垫点云，支持左右脚分别训练与推理
+- 提供可直接使用的训练与推理脚本（`train_deformnet.py`、`infer_deformnet.py`）
+- 已包含示例模型权重与训练日志：`checkpoints/L|R`、`Log/train/`、`loss_curve.png`、`metrics.csv`
+- 训练过程可视化与指标跟踪（主要以 Chamfer Distance 等几何指标衡量）
+- 结果可导出为 STL 网格，便于与 CAD/3D 打印流程对接
+
+推理与导出示例：
+
+```bash
+# 基于左脚示例，生成鞋垫点云并导出 STL
+python infer_deformnet.py \
+  --foot PATH_TO_FOOT_NPY \
+  --template Templates/average_insole_template.npz \
+  --checkpoint checkpoints/L/best.pth \
+  --out results/insole_L.npz
+
+python npz_to_stl.py --input results/insole_L.npz --output results/insole_L.stl
+```
+
+### 预期要达到的应用效果
+
+- 面向门店与医疗场景，实现“扫描 → 个性化鞋垫设计 → STL 导出 → 3D 打印”的分钟级流程
+- 支持参数化控制足弓支撑、后跟包裹、区域厚度等设计要素，提升舒适度与矫形效果（Roadmap）
+- 与现有 CAD/PLM/打印产线无缝衔接，标准化输出、可批量生产与质检
+- 持续优化稳健性与泛化：更丰富的数据增强、跨设备/跨人群迁移、模型压缩与边缘部署
+
 ## Overview
 
 This project implements a deformation network that transforms a template insole point cloud into a personalized insole based on foot geometry. The system uses:
